@@ -1,7 +1,7 @@
 {
-  "version": "2.1.0",
-  "file": "codecolab-2.1.0.vsix",
-  "sha256": "1b06f0b62a41e83345390efc00299158b235a7e8915cb56e612e7a98a839b0e0",
-  "notes": "Avatars and live cursors, follow mode, shared board, chat, file locks, sessions that survive a reload.",
-  "published_at": "2026-08-20T19:13:30+00:00"
+  "version": "2.3.0",
+  "file": "codecolab-2.3.0.vsix",
+  "sha256": "f3f5a5494798aeb3723decfa231a713d8d01aa0a34e55a0f39c5c2c8af32d627",
+  "notes": "Credential files are no longer shared with the session.",
+  "published_at": "2026-08-20T20:04:57+00:00"
 }
