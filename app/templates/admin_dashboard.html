@@ -67,7 +67,7 @@
             <tr>
               <td>
                 <span class="dot {% if p.connected %}dot-on{% endif %}"></span>
-                {{ p.name }}{% if p.guest %} <span class="tag">guest</span>{% endif %}
+                {{ p.name }}
                 {% if p.state == 'pending' %} <span class="tag tag-warn">waiting</span>{% endif %}
               </td>
               <td>{{ p.role }}</td>

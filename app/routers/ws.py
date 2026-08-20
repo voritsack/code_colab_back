@@ -139,8 +139,6 @@ async def session_socket(websocket: WebSocket, public_id: str) -> None:
             session_public_id=session.public_id,
             display_name=participant.display_name,
             role=participant.role,
-            user_id=participant.user_id,
-            is_guest=participant.is_guest,
             approved=participant.state == STATE_APPROVED,
             active_file=participant.active_file,
             edits=participant.edits,
@@ -209,7 +207,6 @@ async def _greet(
                 "participant": {
                     "participant_id": participant.id,
                     "display_name": participant.display_name,
-                    "is_guest": participant.is_guest,
                 },
             },
         )

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from ..db import get_db
-from ..models import STATE_APPROVED, STATUS_ENDED, CollabSession, Participant, User
+from ..models import STATE_APPROVED, STATUS_ENDED, CollabSession, Participant
 from ..templating import templates
 from ..services import get_session_by_code
 from ..utils import normalize_join_code
@@ -27,7 +27,7 @@ async def info() -> dict[str, object]:
     """What a client needs to know before it has a token."""
     return {
         "app": settings.app_name,
-        "allow_registration": settings.allow_registration,
+        "requires_host_code": bool(settings.host_access_code),
         "allow_guests_default": settings.allow_guests_default,
         "public_base_url": settings.public_base_url,
         "extension_id": settings.vscode_extension_id,
@@ -68,9 +68,8 @@ async def join_page(
     }
 
     if session is not None:
-        host = await db.get(User, session.host_id)
         context["session"] = session
-        context["host_name"] = host.name if host else "unknown"
+        context["host_name"] = session.host_name or "the host"
         context["participants"] = int(
             await db.scalar(
                 select(func.count(Participant.id)).where(

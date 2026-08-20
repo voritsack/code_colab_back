@@ -48,15 +48,9 @@
       <li>The host gets a prompt and admits you.</li>
     </ol>
 
-    {% if session.allow_guests %}
     <p class="muted small">
       No account needed - you will be asked for a display name.
     </p>
-    {% else %}
-    <p class="muted small">
-      This session is restricted to signed-in accounts.
-    </p>
-    {% endif %}
   </article>
   {% else %}
   <article class="card join-card">

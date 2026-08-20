@@ -1,23 +1,22 @@
 """Passwords, tokens and the auth dependencies built on top of them.
 
-Three token flavours, all HS256 JWTs signed with SECRET_KEY:
+Two token flavours, both HS256 JWTs signed with SECRET_KEY:
 
-* ``access``  - short-lived, identifies a user to the REST API.
-* ``refresh`` - long-lived, single-use, hashed in the database so it can be
-                revoked. Exchanging one rotates it.
 * ``session`` - scoped to exactly one collaboration session and one
-                participant. This is the only token the WebSocket accepts,
-                so a leaked session token cannot touch the rest of the API.
+                participant, and carrying that participant's role. Holding
+                one with ``role=host`` *is* what makes you the host: there is
+                no account behind a session.
+* ``admin``   - lives in an httpOnly cookie and only reaches the dashboard.
 
-A fourth, ``admin``, lives in an httpOnly cookie for the dashboard.
+Nothing else is authenticated, because nothing else needs to be: joining is
+gated by an unguessable code plus the host admitting you.
 """
 
 from __future__ import annotations
 
-import hashlib
 import hmac
 import secrets
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 import bcrypt
@@ -29,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .config import settings
 from .db import get_db
 from .models import (
+    ROLE_HOST,
     STATE_APPROVED,
     STATE_PENDING,
     STATUS_ENDED,
@@ -40,8 +40,6 @@ from .models import (
 
 ALGORITHM = "HS256"
 
-TOKEN_ACCESS = "access"
-TOKEN_REFRESH = "refresh"
 TOKEN_SESSION = "session"
 TOKEN_ADMIN = "admin"
 
@@ -115,25 +113,6 @@ def decode_token(token: str, expected_type: str) -> dict[str, Any]:
     return payload
 
 
-def create_access_token(user: User) -> str:
-    return create_token(
-        subject=user.id,
-        token_type=TOKEN_ACCESS,
-        expires_delta=timedelta(minutes=settings.access_token_ttl_minutes),
-        claims={"email": user.email, "adm": user.is_admin},
-    )
-
-
-def create_refresh_token(user: User) -> tuple[str, datetime]:
-    expires_at = utcnow() + timedelta(days=settings.refresh_token_ttl_days)
-    token = create_token(
-        subject=user.id,
-        token_type=TOKEN_REFRESH,
-        expires_delta=timedelta(days=settings.refresh_token_ttl_days),
-    )
-    return token, expires_at
-
-
 def create_session_token(*, participant_id: int, session_public_id: str, role: str) -> str:
     return create_token(
         subject=participant_id,
@@ -149,10 +128,6 @@ def create_admin_token(user: User) -> str:
         token_type=TOKEN_ADMIN,
         expires_delta=timedelta(minutes=settings.admin_session_ttl_minutes),
     )
-
-
-def hash_token(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def new_csrf_token() -> str:
@@ -192,34 +167,6 @@ async def load_active_user(db: AsyncSession, user_id: str | int) -> User:
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Account unavailable"
         )
     return user
-
-
-async def current_user(
-    request: Request, db: AsyncSession = Depends(get_db)
-) -> User:
-    token = bearer_token(request)
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    payload = decode_token(token, TOKEN_ACCESS)
-    return await load_active_user(db, payload.get("sub", ""))
-
-
-async def optional_user(
-    request: Request, db: AsyncSession = Depends(get_db)
-) -> User | None:
-    """Same as ``current_user`` but tolerates anonymous callers.
-
-    Used by the join endpoint, which serves both signed-in users and guests.
-    """
-    token = bearer_token(request)
-    if not token:
-        return None
-    payload = decode_token(token, TOKEN_ACCESS)
-    return await load_active_user(db, payload.get("sub", ""))
 
 
 async def current_admin(
@@ -295,6 +242,18 @@ async def session_context(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=exc.reason
         ) from exc
+
+
+async def require_host_session(
+    context: tuple[Participant, CollabSession] = Depends(session_context),
+) -> tuple[Participant, CollabSession]:
+    """The caller must hold a session token minted for that session's host."""
+    participant, session = context
+    if participant.role != ROLE_HOST:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Only the host can do that"
+        )
+    return participant, session
 
 
 async def require_csrf(request: Request) -> None:

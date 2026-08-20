@@ -71,8 +71,6 @@ class Settings(BaseSettings):
 
     # -- Security --------------------------------------------------------
     secret_key: str = Field(..., min_length=32)
-    access_token_ttl_minutes: int = 30
-    refresh_token_ttl_days: int = 30
     session_token_ttl_hours: int = 12
     admin_session_ttl_minutes: int = 480
 
@@ -87,7 +85,8 @@ class Settings(BaseSettings):
     secure_cookies: bool | None = None
 
     # -- Accounts --------------------------------------------------------
-    allow_registration: bool = True
+    # The only accounts that exist are administrators, created from these on
+    # startup. Hosting and joining a session need no account at all.
     admin_email: str | None = None
     admin_password: str | None = None
     admin_name: str = "Administrator"
@@ -97,6 +96,12 @@ class Settings(BaseSettings):
     admin_reset_password: bool = False
 
     # -- Sessions --------------------------------------------------------
+    # Optional shared secret required to *create* a session (never to join
+    # one). Empty means anybody who can reach the server can host, which is
+    # the open default. Set it if the address is public and you would rather
+    # not hand strangers a file-transfer service.
+    host_access_code: str = ""
+
     allow_guests_default: bool = True
     require_approval_default: bool = True
     max_participants: int = 25
@@ -115,8 +120,8 @@ class Settings(BaseSettings):
     join_rate_limit: int = 20
     join_rate_window_seconds: int = 300
     # Generous on purpose: a class signing up together shares one NAT address.
-    register_rate_limit: int = 20
-    register_rate_window_seconds: int = 3600
+    session_create_rate_limit: int = 20
+    session_create_rate_window_seconds: int = 3600
     ws_message_rate_limit: int = 240
     ws_message_rate_window_seconds: int = 10
 

@@ -34,7 +34,6 @@
     var name = el("td");
     name.appendChild(el("span", "dot" + (p.connected ? " dot-on" : "")));
     name.appendChild(document.createTextNode(p.name));
-    if (p.guest) name.appendChild(el("span", "tag", "guest"));
     if (p.state === "pending") name.appendChild(el("span", "tag tag-warn", "waiting"));
     tr.appendChild(name);
 

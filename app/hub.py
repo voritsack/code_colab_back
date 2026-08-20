@@ -27,8 +27,6 @@ class Connection:
     session_public_id: str
     display_name: str
     role: str
-    user_id: int | None = None
-    is_guest: bool = False
     approved: bool = False
     active_file: str | None = None
     edits: int = 0
@@ -44,7 +42,6 @@ class Connection:
             "participant_id": self.participant_id,
             "display_name": self.display_name,
             "role": self.role,
-            "is_guest": self.is_guest,
             "approved": self.approved,
             "active_file": self.active_file,
             "edits": self.edits,

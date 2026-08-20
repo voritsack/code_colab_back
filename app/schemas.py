@@ -4,49 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .config import settings
 from .models import ROLE_EDITOR, ROLE_VIEWER
 from .utils import UnsafePathError, normalize_join_code, sanitize_relative_path
-
-
-# --------------------------------------------------------------------------
-# Auth
-# --------------------------------------------------------------------------
-
-
-class RegisterIn(BaseModel):
-    email: EmailStr
-    name: str = Field(min_length=1, max_length=120)
-    password: str = Field(min_length=8, max_length=128)
-
-
-class LoginIn(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=1, max_length=128)
-
-
-class RefreshIn(BaseModel):
-    refresh_token: str = Field(min_length=10, max_length=4096)
-
-
-class UserOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    email: EmailStr
-    name: str
-    is_admin: bool
-    created_at: datetime
-
-
-class TokenPair(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-    expires_in: int
-    user: UserOut
 
 
 # --------------------------------------------------------------------------
@@ -56,7 +18,10 @@ class TokenPair(BaseModel):
 
 class SessionCreateIn(BaseModel):
     title: str = Field(min_length=1, max_length=200)
+    display_name: str = Field(min_length=2, max_length=120)
     workspace_name: str = Field(default="", max_length=200)
+    # Only checked when HOST_ACCESS_CODE is configured.
+    access_code: str | None = Field(default=None, max_length=200)
     allow_guests: bool | None = None
     require_approval: bool | None = None
     max_participants: int | None = Field(default=None, ge=2, le=200)
@@ -73,7 +38,6 @@ class ParticipantOut(BaseModel):
 
     id: int
     display_name: str
-    is_guest: bool
     role: str
     state: str
     connected: bool
@@ -114,7 +78,7 @@ class SessionCreatedOut(SessionOut):
 
 class JoinIn(BaseModel):
     code: str = Field(min_length=3, max_length=200)
-    display_name: str | None = Field(default=None, max_length=120)
+    display_name: str = Field(min_length=2, max_length=120)
     client_id: str | None = Field(default=None, max_length=64)
 
     @field_validator("code")

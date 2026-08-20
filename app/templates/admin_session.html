@@ -7,7 +7,7 @@
     <a class="back" href="/admin">&larr; Dashboard</a>
     <h1>{{ session.title }}</h1>
     <p class="muted">
-      host {{ host.name if host else 'unknown' }} ·
+      host {{ session.host_name or 'unknown' }} ·
       workspace <code>{{ session.workspace_name or '—' }}</code> ·
       created {{ session.created_at.strftime('%Y-%m-%d %H:%M') }} UTC
     </p>
@@ -23,7 +23,7 @@
     <dt>Link</dt>
     <dd><code>{{ join_url }}</code></dd>
     <dt>Guests</dt>
-    <dd>{{ 'allowed' if session.allow_guests else 'accounts only' }}</dd>
+    <dd>{{ 'open' if session.allow_guests else 'closed to new people' }}</dd>
     <dt>Approval</dt>
     <dd>{{ 'host must approve' if session.require_approval else 'open entry' }}</dd>
   </dl>
@@ -64,7 +64,7 @@
         <tr>
           <td>
             <span class="dot {% if p.connected %}dot-on{% endif %}"></span>
-            {{ p.display_name }}{% if p.is_guest %} <span class="tag">guest</span>{% endif %}
+            {{ p.display_name }}
           </td>
           <td>{{ p.role }}</td>
           <td>{{ p.state }}</td>

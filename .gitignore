@@ -21,3 +21,6 @@ staticfiles/
 .DS_Store
 .idea/
 .vscode/
+
+# Local development database
+codecolab-dev.db

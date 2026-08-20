@@ -4,10 +4,10 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Accounts</h1>
+    <h1>Administrators</h1>
     <p class="muted">
-      Registration is
-      {{ 'open' if settings.allow_registration else 'closed' }} on this server.
+      The only accounts on this server. Hosting and joining a session need no
+      account, so nobody else appears here.
     </p>
   </div>
 </div>
@@ -15,7 +15,7 @@
 <table class="table card">
   <thead>
     <tr>
-      <th>Name</th><th>Email</th><th class="num">Sessions</th>
+      <th>Name</th><th>Email</th>
       <th>Last login</th><th>Status</th><th>Actions</th>
     </tr>
   </thead>
@@ -24,7 +24,6 @@
     <tr>
       <td>{{ u.name }}{% if u.is_admin %} <span class="tag tag-admin">admin</span>{% endif %}</td>
       <td class="path">{{ u.email }}</td>
-      <td class="num">{{ hosted.get(u.id, 0) }}</td>
       <td class="muted small">
         {{ u.last_login_at.strftime('%Y-%m-%d %H:%M') if u.last_login_at else 'never' }}
       </td>
@@ -51,7 +50,7 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="6" class="empty">No accounts yet.</td></tr>
+    <tr><td colspan="5" class="empty">No accounts yet.</td></tr>
     {% endfor %}
   </tbody>
 </table>

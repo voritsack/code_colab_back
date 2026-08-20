@@ -18,15 +18,8 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from . import __version__
 from .config import settings
 from .db import SessionLocal, engine, init_models
-from .models import (
-    STATUS_ENDED,
-    CollabSession,
-    Participant,
-    RefreshToken,
-    User,
-    utcnow,
-)
-from .routers import admin, auth, public, sessions, ws
+from .models import STATUS_ENDED, CollabSession, Participant, User, utcnow
+from .routers import admin, public, sessions, ws
 from .security import hash_password
 from .templating import STATIC_DIR
 
@@ -66,15 +59,6 @@ async def bootstrap_admin() -> None:
 
         if settings.admin_reset_password:
             user.password_hash = hash_password(settings.admin_password)
-            # A password change ends every session it authorised.
-            await db.execute(
-                update(RefreshToken)
-                .where(
-                    RefreshToken.user_id == user.id,
-                    RefreshToken.revoked_at.is_(None),
-                )
-                .values(revoked_at=utcnow())
-            )
             changed = True
             logger.warning(
                 "Reset the password for %s from ADMIN_PASSWORD. Set "
@@ -206,7 +190,6 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     app.include_router(public.router)
-    app.include_router(auth.router)
     app.include_router(sessions.router)
     app.include_router(ws.router)
     app.include_router(admin.router)

@@ -170,7 +170,6 @@ async def session_page(
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    host = await db.get(User, session.host_id)
     participants = (
         await db.scalars(
             select(Participant)
@@ -204,7 +203,6 @@ async def session_page(
             "admin": admin,
             "csrf_token": token,
             "session": session,
-            "host": host,
             "participants": participants,
             "files": files,
             "events": events,
@@ -225,16 +223,6 @@ async def users_page(
     users = (
         await db.scalars(select(User).order_by(User.created_at.desc()).limit(500))
     ).all()
-    hosted = dict(
-        (
-            await db.execute(
-                select(CollabSession.host_id, func.count(CollabSession.id)).group_by(
-                    CollabSession.host_id
-                )
-            )
-        ).all()
-    )
-
     token = _csrf_for(request)
     response = templates.TemplateResponse(
         request,
@@ -244,7 +232,6 @@ async def users_page(
             "admin": admin,
             "csrf_token": token,
             "users": users,
-            "hosted": hosted,
         },
     )
     _set_csrf(response, token)
@@ -343,16 +330,6 @@ async def _collect_stats(db: AsyncSession) -> dict:
         )
     ).all()
 
-    host_names = dict(
-        (
-            await db.execute(
-                select(User.id, User.name).where(
-                    User.id.in_([s.host_id for s in live_sessions] or [0])
-                )
-            )
-        ).all()
-    )
-
     rows = []
     total_online = 0
     for session in live_sessions:
@@ -375,7 +352,7 @@ async def _collect_stats(db: AsyncSession) -> dict:
                 "workspace": session.workspace_name,
                 "join_code": session.join_code,
                 "status": session.status,
-                "host": host_names.get(session.host_id, "unknown"),
+                "host": session.host_name or "unknown",
                 "created_at": session.created_at.isoformat(),
                 "last_activity_at": session.last_activity_at.isoformat(),
                 "online": online,
@@ -394,7 +371,6 @@ async def _collect_stats(db: AsyncSession) -> dict:
                         "name": p.display_name,
                         "role": p.role,
                         "state": p.state,
-                        "guest": p.is_guest,
                         "connected": p.connected,
                         "active_file": p.active_file,
                         "edits": p.edits,

@@ -11,6 +11,10 @@ Companion extension: <https://github.com/voritsack/code_colab_extention>
 
 ## What it does
 
+- **No accounts.** Hosting and joining need nothing but a display name.
+  Creating a session mints a host token; joining mints a participant token.
+  Those tokens are the only credentials the API takes, and each is scoped to
+  one session. The only accounts on the server are administrators.
 - **Sessions** — a host creates one from their workspace and gets
   `https://<host>/j/abc-defg-hij` plus the bare code `abc-defg-hij`.
 - **Lobby** — anyone opening the link is handed off to VS Code, requests entry,
@@ -137,17 +141,6 @@ Percent-encode `: / ? # [ ] @ + ^ !` if they appear in a database password.
 
 ## API
 
-### Auth — `/api/auth`
-
-| Method | Path | Notes |
-| --- | --- | --- |
-| POST | `/register` | Returns an access + refresh pair. Disable with `ALLOW_REGISTRATION=false`. |
-| POST | `/login` | Same response shape. Rate limited per IP. |
-| POST | `/refresh` | Rotates: the presented refresh token is revoked. |
-| POST | `/logout` | Revokes one refresh token. |
-| POST | `/logout-all` | Revokes every refresh token for the caller. |
-| GET | `/me` | Current user. |
-
 ### Sessions — `/api/sessions`
 
 | Method | Path | Auth | Notes |
@@ -187,12 +180,18 @@ Close codes: `4001` unauthorised, `4002` bad message, `4003` denied,
 
 ## Security
 
-- **bcrypt** password hashes; login answers identically for an unknown email
-  and a wrong password, so the endpoint cannot enumerate accounts.
-- **Three token types.** Access tokens reach the REST API. Refresh tokens are
-  stored only as a SHA-256 hash and rotate on every use. Session tokens are
-  scoped to one participant in one session and are the *only* thing the
-  WebSocket accepts — a leaked one cannot touch the rest of the API.
+- **Two token types, both narrow.** A session token identifies one
+  participant in one session and carries their role; holding one with
+  `role=host` is what makes you the host. An admin token lives in an httpOnly
+  cookie and only reaches the dashboard. A leaked session token cannot touch
+  anything outside its own session, and expires with it.
+- **Anyone can host by default**, which is the point — but it does mean the
+  server will store files for whoever finds the address. Set
+  `HOST_ACCESS_CODE` to require a shared secret before a session can be
+  *created*; joining is unaffected. Session creation is rate limited per IP
+  either way.
+- **bcrypt** for the admin password; the login form answers identically for an
+  unknown email and a wrong password.
 - **Path safety.** `app/utils.sanitize_relative_path` is the single choke point
   for every path that arrives from a peer. Absolute paths, `..`, drive letters,
   UNC prefixes, null bytes and reserved Windows names are refused, over REST and
@@ -227,6 +226,19 @@ upload, path-traversal rejection, the join page, the lobby, approve/deny,
 role changes, pause/resume, ending a session, and the admin dashboard
 including its CSRF check. Admin credentials come from `ADMIN_EMAIL` /
 `ADMIN_PASSWORD` in the environment or `.env`.
+
+## Migrating from the account-based version
+
+Sessions used to belong to a user account. If your database predates that
+change, drop the affected tables once and let the models rebuild them:
+
+```bash
+python scripts/migrate_accountless.py          # dry run
+python scripts/migrate_accountless.py --yes
+```
+
+Administrator accounts are kept; sessions, participants, files and events are
+not. Run it while the server is stopped, then start it back up.
 
 ## Maintenance
 
@@ -265,8 +277,11 @@ app/
   routers/        auth, sessions, ws, admin, public
   templates/      admin + join pages (Jinja2)
   static/         one stylesheet, two small scripts
+deploy/
+  nginx/          a vhost that actually forwards websocket upgrades
 scripts/
   cleanup.py      stale sessions, purging, test-data removal
+  migrate_accountless.py
 tests/
   e2e.py          end-to-end checks against a running server
 ```

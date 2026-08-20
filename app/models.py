@@ -1,7 +1,11 @@
 """Database models.
 
-The whole product is four ideas: a user, a collaboration session, the people
-inside it, and the files they are editing. Everything else is analytics.
+Three ideas: a collaboration session, the people inside it, and the files
+they are editing. Everything else is analytics.
+
+Accounts exist only for the admin dashboard. Hosting and joining need no
+account at all - identity inside a session is a display name plus a
+session-scoped token.
 """
 
 from __future__ import annotations
@@ -70,27 +74,6 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    hosted_sessions: Mapped[list["CollabSession"]] = relationship(
-        back_populates="host", cascade="all, delete-orphan"
-    )
-
-
-class RefreshToken(Base):
-    """One row per issued refresh token. Rotated on every use."""
-
-    __tablename__ = "refresh_tokens"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
-    # sha256 of the token: the raw value never touches the database.
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
-    user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
 
 class CollabSession(Base):
     __tablename__ = "sessions"
@@ -102,9 +85,9 @@ class CollabSession(Base):
     title: Mapped[str] = mapped_column(String(200))
     workspace_name: Mapped[str] = mapped_column(String(200), default="")
 
-    host_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
+    # Whoever started it, by the name they typed. There is no account behind
+    # this: the host is identified by holding a session token with role=host.
+    host_name: Mapped[str] = mapped_column(String(120), default="")
     status: Mapped[str] = mapped_column(String(16), default=STATUS_ACTIVE, index=True)
 
     allow_guests: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -118,7 +101,6 @@ class CollabSession(Base):
     paused_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    host: Mapped[User] = relationship(back_populates="hosted_sessions")
     participants: Mapped[list["Participant"]] = relationship(
         back_populates="session", cascade="all, delete-orphan"
     )
@@ -138,12 +120,7 @@ class Participant(Base):
     session_id: Mapped[int] = mapped_column(
         ForeignKey("sessions.id", ondelete="CASCADE"), index=True
     )
-    user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
-    )
-
     display_name: Mapped[str] = mapped_column(String(120))
-    is_guest: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     role: Mapped[str] = mapped_column(String(10), default=ROLE_VIEWER, nullable=False)
     state: Mapped[str] = mapped_column(
         String(12), default=STATE_PENDING, nullable=False, index=True
@@ -162,7 +139,6 @@ class Participant(Base):
     left_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     session: Mapped[CollabSession] = relationship(back_populates="participants")
-    user: Mapped[User | None] = relationship()
 
     @property
     def can_edit(self) -> bool:

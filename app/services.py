@@ -40,7 +40,7 @@ async def log_event(
         actor=(actor or (user.name if user else "") or (participant.display_name if participant else ""))[:120],
         session_id=session.id if session else None,
         participant_id=participant.id if participant else None,
-        user_id=user.id if user else (participant.user_id if participant else None),
+        user_id=user.id if user else None,
     )
     db.add(event)
     return event
@@ -87,17 +87,6 @@ async def get_session_by_code(db: AsyncSession, code: str) -> CollabSession | No
     )
 
 
-async def require_host(
-    db: AsyncSession, public_id: str, user: User
-) -> CollabSession:
-    session = await get_session_or_404(db, public_id)
-    if session.host_id != user.id and not user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Only the host can do that"
-        )
-    return session
-
-
 async def active_participant_count(db: AsyncSession, session_id: int) -> int:
     return int(
         await db.scalar(
@@ -126,7 +115,7 @@ def touch(session: CollabSession) -> None:
 
 
 def build_session_out(
-    session: CollabSession, *, host_name: str, participant_count: int
+    session: CollabSession, *, host_name: str | None = None, participant_count: int
 ) -> SessionOut:
     return SessionOut(
         public_id=session.public_id,
@@ -138,7 +127,7 @@ def build_session_out(
         require_approval=session.require_approval,
         max_participants=session.max_participants,
         created_at=session.created_at,
-        host_name=host_name,
+        host_name=host_name if host_name is not None else session.host_name,
         participant_count=participant_count,
         join_url=settings.join_url(session.join_code),
         vscode_link=settings.vscode_deep_link(session.join_code),
@@ -146,7 +135,7 @@ def build_session_out(
 
 
 async def build_session_detail(
-    db: AsyncSession, session: CollabSession, *, host_name: str
+    db: AsyncSession, session: CollabSession, *, host_name: str | None = None
 ) -> SessionDetailOut:
     participants = (
         await db.scalars(
@@ -181,7 +170,6 @@ def participant_payload(participant: Participant) -> dict[str, Any]:
         "display_name": participant.display_name,
         "role": participant.role,
         "state": participant.state,
-        "is_guest": participant.is_guest,
         "connected": participant.connected,
         "active_file": participant.active_file,
         "edits": participant.edits,
