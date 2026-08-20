@@ -2,7 +2,7 @@
 
     python scripts/cleanup.py --stale
     python scripts/cleanup.py --purge-ended 30 --yes
-    python scripts/cleanup.py --test-data --yes
+    python scripts/cleanup.py --all --yes
 
 Nothing is deleted without ``--yes``: every run is a dry run first and prints
 exactly what it would touch. Rows are removed in dependency order rather than
@@ -31,7 +31,6 @@ from app.models import (  # noqa: E402
     ActivityEvent,
     CollabSession,
     Participant,
-    RefreshToken,
     SessionFile,
     User,
     utcnow,
@@ -40,7 +39,7 @@ from app.models import (  # noqa: E402
 
 async def counts(db: AsyncSession) -> dict[str, int]:
     out = {}
-    for model in (User, RefreshToken, CollabSession, Participant, SessionFile, ActivityEvent):
+    for model in (User, CollabSession, Participant, SessionFile, ActivityEvent):
         out[model.__tablename__] = int(
             await db.scalar(select(func.count()).select_from(model)) or 0
         )
@@ -75,40 +74,6 @@ async def drop_sessions(db: AsyncSession, session_ids: list[int]) -> None:
     await db.execute(delete(SessionFile).where(SessionFile.session_id.in_(session_ids)))
     await db.execute(delete(Participant).where(Participant.session_id.in_(session_ids)))
     await db.execute(delete(CollabSession).where(CollabSession.id.in_(session_ids)))
-
-
-async def drop_users(db: AsyncSession, user_ids: list[int]) -> None:
-    if not user_ids:
-        return
-    owned = list(
-        (
-            await db.scalars(
-                select(CollabSession.id).where(CollabSession.host_id.in_(user_ids))
-            )
-        ).all()
-    )
-    await drop_sessions(db, owned)
-
-    # Account-level history (registered, logged in) belongs to the account and
-    # goes with it. Events inside somebody else's session stay, with the
-    # reference dropped - that session's log is not ours to rewrite.
-    await db.execute(
-        delete(ActivityEvent).where(
-            ActivityEvent.user_id.in_(user_ids), ActivityEvent.session_id.is_(None)
-        )
-    )
-    await db.execute(delete(RefreshToken).where(RefreshToken.user_id.in_(user_ids)))
-    await db.execute(
-        Participant.__table__.update()
-        .where(Participant.user_id.in_(user_ids))
-        .values(user_id=None)
-    )
-    await db.execute(
-        ActivityEvent.__table__.update()
-        .where(ActivityEvent.user_id.in_(user_ids))
-        .values(user_id=None)
-    )
-    await db.execute(delete(User).where(User.id.in_(user_ids)))
 
 
 async def close_stale(db: AsyncSession, minutes: int, apply: bool) -> int:
@@ -155,19 +120,14 @@ async def main() -> int:
         help="delete sessions that ended more than DAYS ago",
     )
     parser.add_argument(
-        "--test-data",
-        action="store_true",
-        help="delete every non-admin account and the sessions it hosted",
-    )
-    parser.add_argument(
         "--all",
         action="store_true",
-        help="delete every session and every non-admin account (keeps admins)",
+        help="delete every session, participant, file and event (keeps admins)",
     )
     parser.add_argument("--yes", action="store_true", help="actually make the changes")
     args = parser.parse_args()
 
-    if not any((args.stale, args.purge_ended, args.test_data, args.all)):
+    if not any((args.stale, args.purge_ended, args.all)):
         parser.print_help()
         return 1
 
@@ -201,21 +161,19 @@ async def main() -> int:
             if apply:
                 await drop_sessions(db, ids)
 
-        if args.test_data or args.all:
-            victims = (
-                await db.scalars(select(User).where(User.is_admin.is_(False)).order_by(User.id))
-            ).all()
-            print(f"\nNon-admin accounts: {len(victims)}")
-            for user in victims:
-                print(f"  {user.email}")
-            if apply:
-                await drop_users(db, [u.id for u in victims])
-
         if args.all:
             remaining = list((await db.scalars(select(CollabSession.id))).all())
-            print(f"\nRemaining sessions: {len(remaining)}")
+            print(f"\nSessions to remove: {len(remaining)}")
             if apply:
                 await drop_sessions(db, remaining)
+                # Administrator logins survive; anything tied to a session
+                # went with the session.
+                await db.execute(
+                    delete(ActivityEvent).where(
+                        ActivityEvent.session_id.is_(None),
+                        ActivityEvent.user_id.is_(None),
+                    )
+                )
 
         if apply:
             await db.commit()
