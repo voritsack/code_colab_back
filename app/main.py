@@ -8,30 +8,18 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from datetime import timedelta
-
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import delete, select, update
+from sqlalchemy import select
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
 from .config import settings
 from .db import SessionLocal, engine, init_models
-from . import storage
-from .models import (
-    STATUS_ENDED,
-    Attachment,
-    BoardStroke,
-    ChatMessage,
-    CollabSession,
-    Participant,
-    SessionFile,
-    User,
-    utcnow,
-)
+from .housekeeping import close_orphaned_sessions, sweeper
+from .models import User
 from .routers import admin, attachments, extension, public, sessions, ws
 from .security import hash_password
 from .templating import STATIC_DIR
@@ -81,162 +69,6 @@ async def bootstrap_admin() -> None:
 
         if changed:
             await db.commit()
-
-
-async def close_orphaned_sessions() -> None:
-    """Reconcile the database with the fact that the process just started.
-
-    The hub only exists in memory, so after a restart nobody is connected -
-    whatever the participant rows say. Sessions idle beyond the timeout are
-    ended outright; the rest keep their status and wait for their host to
-    reconnect.
-    """
-    cutoff = utcnow() - timedelta(minutes=settings.session_idle_timeout_minutes)
-    async with SessionLocal() as db:
-        marked = await db.execute(
-            update(Participant)
-            .where(Participant.connected.is_(True))
-            .values(connected=False)
-        )
-
-        stale = (
-            await db.scalars(
-                select(CollabSession).where(
-                    CollabSession.status != STATUS_ENDED,
-                    CollabSession.last_activity_at < cutoff,
-                )
-            )
-        ).all()
-        now = utcnow()
-        for session in stale:
-            session.status = STATUS_ENDED
-            session.ended_at = now
-
-        await db.commit()
-
-        if marked.rowcount or stale:
-            logger.info(
-                "Startup sweep: cleared %s stale connection(s), ended %s idle session(s)",
-                marked.rowcount or 0,
-                len(stale),
-            )
-
-
-async def sweep_once() -> None:
-    """End idle sessions and delete the ones that finished long ago.
-
-    Without this, a host who closes their laptop leaves a session showing as
-    live for good, and every file ever shared stays in the database.
-    """
-    now = utcnow()
-    idle_cutoff = now - timedelta(minutes=settings.session_idle_timeout_minutes)
-
-    async with SessionLocal() as db:
-        stale = (
-            await db.scalars(
-                select(CollabSession).where(
-                    CollabSession.status != STATUS_ENDED,
-                    CollabSession.last_activity_at < idle_cutoff,
-                )
-            )
-        ).all()
-        for session in stale:
-            session.status = STATUS_ENDED
-            session.ended_at = now
-
-        # Attachments belong to the session that carried them, and go as soon
-        # as it ends - whether it ended cleanly or the process died before it
-        # could tidy up after itself.
-        detached = 0
-        orphaned = (
-            await db.scalars(
-                select(Attachment)
-                .join(CollabSession, Attachment.session_id == CollabSession.id)
-                .where(CollabSession.status == STATUS_ENDED)
-            )
-        ).all()
-        if orphaned:
-            storage.remove_many(row.stored_name for row in orphaned)
-            await db.execute(
-                delete(Attachment).where(Attachment.id.in_([r.id for r in orphaned]))
-            )
-            detached = len(orphaned)
-
-        # Stage one: an ended session's contents. These are what actually
-        # take up room - a shared workspace can be tens of megabytes - and
-        # they are dead weight once the session is over.
-        stripped = 0
-        if settings.artefact_retention_hours > 0:
-            artefact_cutoff = now - timedelta(hours=settings.artefact_retention_hours)
-            spent = list(
-                (
-                    await db.scalars(
-                        select(CollabSession.id).where(
-                            CollabSession.status == STATUS_ENDED,
-                            CollabSession.last_activity_at < artefact_cutoff,
-                        )
-                    )
-                ).all()
-            )
-            if spent:
-                for model in (SessionFile, BoardStroke, ChatMessage):
-                    result = await db.execute(
-                        delete(model).where(model.session_id.in_(spent))
-                    )
-                    stripped += result.rowcount or 0
-
-        # Stage two: the session row and its roster, once it is old enough
-        # that nobody is going to look it up in the dashboard again.
-        purged = 0
-        if settings.retention_days > 0:
-            old_cutoff = now - timedelta(days=settings.retention_days)
-            doomed = list(
-                (
-                    await db.scalars(
-                        select(CollabSession.id).where(
-                            CollabSession.status == STATUS_ENDED,
-                            CollabSession.ended_at.isnot(None),
-                            CollabSession.ended_at < old_cutoff,
-                        )
-                    )
-                ).all()
-            )
-            if doomed:
-                for model in (BoardStroke, ChatMessage, SessionFile, Attachment, Participant):
-                    await db.execute(
-                        delete(model).where(model.session_id.in_(doomed))
-                    )
-                await db.execute(
-                    delete(CollabSession).where(CollabSession.id.in_(doomed))
-                )
-                purged = len(doomed)
-
-        await db.commit()
-
-        # Files on disk with no row pointing at them - a crash between the
-        # write and the commit - would otherwise sit there forever.
-        known = set((await db.scalars(select(Attachment.stored_name))).all())
-        storage.sweep_orphans(known)
-
-    if stale or purged or stripped or detached:
-        logger.info(
-            "Sweep: ended %s idle session(s), freed %s artefact row(s), "
-            "deleted %s attachment(s), purged %s expired session(s)",
-            len(stale),
-            stripped,
-            detached,
-            purged,
-        )
-
-
-async def sweeper() -> None:
-    interval = max(settings.sweep_interval_minutes, 1) * 60
-    while True:
-        await asyncio.sleep(interval)
-        try:
-            await sweep_once()
-        except Exception:  # noqa: BLE001 - housekeeping must never kill the app
-            logger.exception("Sweep failed")
 
 
 @asynccontextmanager

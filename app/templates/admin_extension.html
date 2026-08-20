@@ -1,0 +1,124 @@
+{% extends "base.html" %} {% block title %}Extension · {{ settings.app_name }}{% endblock %}
+{% block nav_ext %}active{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Extension updates</h1>
+    <p class="muted">
+      The build this server hands out. Sideloaded copies with automatic
+      updates turned on pull it in the background and install it themselves.
+    </p>
+  </div>
+  {% if manifest %}
+  <span class="pill pill-active">{{ manifest.version }}</span>
+  {% else %}
+  <span class="pill pill-ended">nothing published</span>
+  {% endif %}
+</div>
+
+{% if error %}
+<p class="alert alert-error">{{ error }}</p>
+{% elif done %}
+<p class="alert">{{ done }}</p>
+{% endif %}
+
+<div class="split">
+  <section class="col-main stack">
+    <article class="card">
+      <h2 class="section-title">Update links</h2>
+      <p class="muted small">
+        The extension asks the first of these what the current version is, and
+        downloads the second when it is behind. Open either one to check what
+        a client sees; hand the download link to anyone installing by hand.
+      </p>
+      <dl class="kv">
+        <dt>Manifest</dt>
+        <dd><a href="{{ urls.manifest }}" target="_blank" rel="noopener">{{ urls.manifest }}</a></dd>
+        <dt>Download</dt>
+        <dd><a href="{{ urls.download }}" target="_blank" rel="noopener">{{ urls.download }}</a></dd>
+        <dt>In VS Code</dt>
+        <dd>
+          set <code>codecolab.serverUrl</code> to <code>{{ settings.public_base_url }}</code>
+          and <code>codecolab.autoUpdate</code> to <code>silent</code>
+        </dd>
+      </dl>
+      {% if not settings.public_base_url.startswith('https://') %}
+      <p class="alert alert-warn">
+        {{ settings.public_base_url }} is not https, so extensions will ask
+        before installing rather than updating silently. Anyone on the
+        network can answer for a plain-http server, and a silent install
+        would hand them the machine.
+      </p>
+      {% endif %}
+    </article>
+
+    <article class="card">
+      <h2 class="section-title">Publish a build</h2>
+      {% if manifest %}
+      <dl class="kv">
+        <dt>Version</dt>
+        <dd><code>{{ manifest.version }}</code></dd>
+        <dt>File</dt>
+        <dd><code>{{ manifest.file }}</code> · {{ (size / 1048576) | round(2) }} MB</dd>
+        <dt>SHA-256</dt>
+        <dd><code class="path">{{ manifest.sha256 }}</code></dd>
+        <dt>Published</dt>
+        <dd>{{ manifest.published_at or '—' }}</dd>
+        <dt>Notes</dt>
+        <dd>{{ manifest.notes or '—' }}</dd>
+      </dl>
+      {% else %}
+      <p class="muted small">
+        No build is published, so every extension stays on whatever it has.
+      </p>
+      {% endif %}
+
+      <form method="post" action="/admin/extension/publish" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <label class="field">
+          <span>VSIX package</span>
+          <input type="file" name="package" accept=".vsix" required />
+        </label>
+        <label class="field">
+          <span>Release note (shown to anyone who is asked to update)</span>
+          <input class="input" type="text" name="notes" maxlength="300" />
+        </label>
+        <div class="row-actions">
+          <button class="btn btn-primary">Publish to everyone</button>
+        </div>
+      </form>
+      <p class="muted small">
+        Every sideloaded client on <code>silent</code> installs this without
+        being asked. The version has to be higher than the one they are on,
+        and the download is checked against the digest published with it.
+      </p>
+    </article>
+  </section>
+
+  <section class="col-side stack">
+    <div class="card">
+      <h2 class="section-title">Withdraw</h2>
+      <p class="muted small">
+        Stops offering updates and deletes the stored build. Copies already
+        installed keep working exactly as they are.
+      </p>
+      <form method="post" action="/admin/extension/unpublish">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <button class="btn btn-danger btn-block">Withdraw the build</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2 class="section-title">From the command line</h2>
+      <p class="muted small">Same result, if you would rather commit the build:</p>
+      <p><code class="path">python scripts/publish_extension.py path/to.vsix --notes "…"</code></p>
+      <p class="muted small">
+        The deployment folder is rebuilt from git on every start, so a build
+        uploaded here disappears on the next redeploy unless it is committed
+        as well.
+      </p>
+    </div>
+  </section>
+</div>
+{% endblock %}

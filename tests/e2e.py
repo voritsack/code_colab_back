@@ -290,6 +290,111 @@ async def main():
             check("only admins are listed",
                   r.status_code == 200 and "Administrators" in r.text and "Ada Host" not in r.text)
 
+            # ---- watching, editing and deleting a live session -------------
+            r = await c.post("/api/sessions", json={
+                "title": f"Watched {tag}", "display_name": "Grace Host",
+                "workspace_name": "watched"})
+            live = r.json()
+            live_id, live_token = live["public_id"], live["session_token"]
+            await c.put(f"/api/sessions/{live_id}/files", headers=bearer(live_token),
+                        json={"files": [{"path": "app/main.py", "content": "print('watch me')\n"}]})
+
+            r = await ac.get(f"/admin/sessions/{live_id}/watch")
+            check("watch page renders", r.status_code == 200 and "Watching" in r.text,
+                  str(r.status_code))
+
+            r = await ac.get(f"/admin/api/sessions/{live_id}/watch",
+                             params={"path": "app/main.py"})
+            watch = r.json() if r.status_code == 200 else {}
+            check("watch feed lists the files",
+                  any(f["path"] == "app/main.py" for f in watch.get("files", [])),
+                  str(r.status_code))
+            check("watch feed shows the file's contents",
+                  (watch.get("selected") or {}).get("content", "").strip() == "print('watch me')",
+                  json.dumps(watch.get("selected"))[:200])
+            check("watch feed carries the roster",
+                  any(p["name"] == "Grace Host" for p in watch.get("participants", [])))
+
+            r = await ac.get(f"/admin/api/sessions/{live_id}/watch")
+            check("watching without a file selected is fine",
+                  r.status_code == 200 and r.json()["selected"] is None)
+
+            csrf = ac.cookies.get("codecolab_csrf")
+            r = await ac.post(f"/admin/sessions/{live_id}/edit", data={
+                "csrf_token": csrf, "title": "Renamed by an admin",
+                "max_participants": 7, "require_approval": "on"})
+            check("admin can edit a session", r.status_code == 303, str(r.status_code))
+
+            r = await c.get(f"/api/sessions/{live_id}", headers=bearer(live_token))
+            edited = r.json()
+            check("the new title reaches the host",
+                  edited["title"] == "Renamed by an admin", edited["title"])
+            check("an unticked box closes the session to guests",
+                  edited["allow_guests"] is False, str(edited["allow_guests"]))
+
+            r = await ac.post(f"/admin/sessions/{live_id}/edit", data={"title": "no csrf"})
+            check("editing needs the csrf token", r.status_code == 403, str(r.status_code))
+
+            before_code = edited["join_code"]
+            r = await ac.post(f"/admin/sessions/{live_id}/rotate-code", data={"csrf_token": csrf})
+            check("admin can rotate the join code", r.status_code == 303, str(r.status_code))
+            r = await c.get(f"/api/sessions/{live_id}", headers=bearer(live_token))
+            check("the old invite stops working",
+                  r.json()["join_code"] != before_code, r.json()["join_code"])
+            r = await c.post("/api/sessions/join",
+                             json={"code": before_code, "display_name": "Stale Link"})
+            check("and cannot be joined with", r.status_code == 404, str(r.status_code))
+
+            r = await ac.post(f"/admin/sessions/{live_id}/delete", data={"csrf_token": csrf})
+            check("admin can delete a session", r.status_code == 303, str(r.status_code))
+            r = await c.get(f"/api/sessions/{live_id}", headers=bearer(live_token))
+            check("a deleted session is gone from the api",
+                  r.status_code in (401, 404), str(r.status_code))
+
+            # ---- maintenance ------------------------------------------------
+            r = await ac.get("/admin/maintenance")
+            check("maintenance page renders",
+                  r.status_code == 200 and "Prune now" in r.text, str(r.status_code))
+            r = await ac.post("/admin/maintenance/prune",
+                              data={"csrf_token": csrf, "scope": "sweep"})
+            check("prune runs on demand",
+                  r.status_code == 303 and "/admin/maintenance?done=" in r.headers.get("location", ""),
+                  f"{r.status_code} {r.headers.get('location')}")
+            r = await ac.post("/admin/maintenance/prune",
+                              data={"csrf_token": csrf, "scope": "nonsense"})
+            check("an unknown prune scope is refused", r.status_code == 400, str(r.status_code))
+
+            # ---- publishing the extension build ------------------------------
+            r = await ac.get("/admin/extension")
+            check("extension page renders",
+                  r.status_code == 200 and "/api/extension/latest" in r.text, str(r.status_code))
+
+            manifest = (await c.get("/api/extension/latest")).json()
+            if manifest.get("available"):
+                build = (await c.get("/download/extension")).content
+                r = await ac.post("/admin/extension/publish",
+                                  data={"csrf_token": csrf, "notes": f"republished by {tag}"},
+                                  files={"package": ("codecolab.vsix", build,
+                                                     "application/octet-stream")})
+                check("a build can be published from the dashboard",
+                      r.status_code == 303 and "done=" in r.headers.get("location", ""),
+                      f"{r.status_code} {r.headers.get('location')}")
+                after = (await c.get("/api/extension/latest")).json()
+                check("the manifest still points at that build",
+                      after.get("version") == manifest["version"]
+                      and after.get("sha256") == manifest["sha256"],
+                      json.dumps(after)[:200])
+            else:
+                print("[SKIP] publish - no build is published to round-trip")
+
+            r = await ac.post("/admin/extension/publish",
+                              data={"csrf_token": csrf},
+                              files={"package": ("junk.vsix", b"not a zip",
+                                                 "application/octet-stream")})
+            check("anything that is not a vsix is refused",
+                  r.status_code == 303 and "error=" in r.headers.get("location", ""),
+                  f"{r.status_code} {r.headers.get('location')}")
+
     # ---- housekeeping ----------------------------------------------------
     # An ended session should not keep its files around; the sweeper is what
     # normally does this, driven here directly so the test is not left
@@ -298,7 +403,7 @@ async def main():
 
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     try:
-        app_main = importlib.import_module("app.main")
+        app_housekeeping = importlib.import_module("app.housekeeping")
         app_config = importlib.import_module("app.config")
         app_db = importlib.import_module("app.db")
         app_models = importlib.import_module("app.models")
@@ -332,7 +437,7 @@ async def main():
                 )
                 await db.commit()
 
-        await app_main.sweep_once()
+        await app_housekeeping.sweep_once()
 
         async with app_db.SessionLocal() as db:
             row = await db.scalar(
@@ -340,16 +445,17 @@ async def main():
                     app_models.CollabSession.public_id == pid
                 )
             )
-            after = int(
-                await db.scalar(
-                    select(func.count(app_models.SessionFile.id)).where(
-                        app_models.SessionFile.session_id == row.id
-                    )
-                )
-                or 0
-            )
-            check("sweeper: files cleared once it goes quiet", after == 0, str(after))
             check("sweeper: the session record survives for the dashboard", row is not None)
+            if row is not None:
+                after = int(
+                    await db.scalar(
+                        select(func.count(app_models.SessionFile.id)).where(
+                            app_models.SessionFile.session_id == row.id
+                        )
+                    )
+                    or 0
+                )
+                check("sweeper: files cleared once it goes quiet", after == 0, str(after))
         await app_db.engine.dispose()
 
     print()

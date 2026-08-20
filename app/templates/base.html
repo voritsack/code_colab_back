@@ -19,6 +19,8 @@
       <nav class="topnav">
         <a href="/admin" class="{% block nav_dash %}{% endblock %}">Dashboard</a>
         <a href="/admin/users" class="{% block nav_users %}{% endblock %}">Users</a>
+        <a href="/admin/extension" class="{% block nav_ext %}{% endblock %}">Extension</a>
+        <a href="/admin/maintenance" class="{% block nav_maint %}{% endblock %}">Maintenance</a>
       </nav>
       <form method="post" action="/admin/logout" class="topbar-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />

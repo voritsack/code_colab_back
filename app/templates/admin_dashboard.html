@@ -56,7 +56,10 @@
               {{ row.files }} files
             </p>
           </div>
-          <span class="pill pill-{{ row.status }}">{{ row.status }}</span>
+          <div class="head-actions">
+            <span class="pill pill-{{ row.status }}">{{ row.status }}</span>
+            <a class="btn btn-small" href="/admin/sessions/{{ row.public_id }}/watch">Watch</a>
+          </div>
         </header>
         <table class="table">
           <thead>

@@ -59,7 +59,13 @@
       )
     );
     head.appendChild(left);
-    head.appendChild(el("span", "pill pill-" + row.status, row.status));
+
+    var actions = el("div", "head-actions");
+    actions.appendChild(el("span", "pill pill-" + row.status, row.status));
+    var watch = el("a", "btn btn-small", "Watch");
+    watch.href = "/admin/sessions/" + row.public_id + "/watch";
+    actions.appendChild(watch);
+    head.appendChild(actions);
     card.appendChild(head);
 
     var table = el("table", "table");

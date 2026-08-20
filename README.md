@@ -43,7 +43,11 @@ Companion extension: <https://github.com/voritsack/code_colab_extention>
   record itself is purged after the retention window.
 - **Admin dashboard** — server-rendered pages at `/admin` showing live
   sessions, who is connected, which file each person has open, edit counts and
-  an activity feed.
+  an activity feed. An administrator can **watch** a session read-only (its
+  files, chat, roster and locks, without joining it or appearing in it),
+  **edit** its settings, rotate its join code, pause, end or delete it,
+  **prune** finished sessions on demand, and **publish** a new extension
+  build for every client to pull.
 
 ---
 

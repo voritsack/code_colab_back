@@ -1,7 +1,7 @@
 {
-  "version": "2.5.0",
-  "file": "codecolab-2.5.0.vsix",
-  "sha256": "6eb9942405613a06b258767236ccf1ee83cb04eeb7fc8d8ff07cd2cdd9c7366f",
-  "notes": "Board and chat work while paused; editors can unlock files.",
-  "published_at": "2026-08-20T20:57:10+00:00"
+  "version": "2.6.0",
+  "file": "codecolab-2.6.0.vsix",
+  "sha256": "2a097faeb0384a4820cb1d73e249011438e328a8cd7f20f248c452083d78b893",
+  "notes": "republished by e0868d",
+  "published_at": "2026-08-20T21:42:41+00:00"
 }

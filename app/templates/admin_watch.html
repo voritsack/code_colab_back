@@ -1,0 +1,73 @@
+{% extends "base.html" %} {% block title %}Watching {{ session.title }} · {{ settings.app_name }}{% endblock %}
+{% block nav_dash %}active{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <a class="back" href="/admin/sessions/{{ session.public_id }}">&larr; Session</a>
+    <h1>Watching {{ session.title }}</h1>
+    <p class="muted">
+      Read-only. Nobody in the session is told, and nothing here can type back.
+    </p>
+  </div>
+  <div class="live-flag">
+    <span class="pulse"></span>
+    <span data-live-clock>updated just now</span>
+  </div>
+</div>
+
+<div
+  class="watch"
+  data-watch
+  data-url="{{ watch_url }}"
+  data-selected="{{ selected }}"
+>
+  <section class="watch-files card">
+    <header class="watch-head">
+      <h2 class="section-title">Files</h2>
+      <span class="muted small" data-file-count>—</span>
+    </header>
+    <ul class="filelist" data-files>
+      <li class="empty">Loading…</li>
+    </ul>
+  </section>
+
+  <section class="watch-code card">
+    <header class="watch-head">
+      <h2 class="section-title" data-code-title>Pick a file</h2>
+      <span class="muted small" data-code-meta></span>
+    </header>
+    <pre class="code" data-code>Select a file on the left to read what everyone is looking at.</pre>
+  </section>
+
+  <section class="watch-side">
+    <div class="card">
+      <header class="watch-head">
+        <h2 class="section-title">People</h2>
+        <span class="pill pill-{{ session.status }}" data-status>{{ session.status }}</span>
+      </header>
+      <ul class="peoplelist" data-people>
+        <li class="empty">Loading…</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2 class="section-title">Chat</h2>
+      <ol class="feed" data-chat>
+        <li class="empty">Nothing said yet.</li>
+      </ol>
+    </div>
+
+    <div class="card">
+      <h2 class="section-title">Attachments</h2>
+      <ul class="filelist" data-attachments>
+        <li class="empty">None.</li>
+      </ul>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/watch.js" defer></script>
+{% endblock %}

@@ -12,7 +12,14 @@
       created {{ session.created_at.strftime('%Y-%m-%d %H:%M') }} UTC
     </p>
   </div>
-  <span class="pill pill-{{ session.status }}">{{ session.status }}</span>
+  <div class="head-actions">
+    <span class="pill pill-{{ session.status }}">{{ session.status }}</span>
+    {% if session.status != 'ended' %}
+    <a class="btn btn-small" href="/admin/sessions/{{ session.public_id }}/watch">Watch live</a>
+    {% else %}
+    <a class="btn btn-small" href="/admin/sessions/{{ session.public_id }}/watch">Read what is left</a>
+    {% endif %}
+  </div>
 </div>
 
 <section class="card">
@@ -45,9 +52,56 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
       <button class="btn btn-danger">End session</button>
     </form>
+    <form method="post" action="/admin/sessions/{{ session.public_id }}/rotate-code">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <button class="btn">New join code</button>
+    </form>
   </div>
   {% endif %}
+  <form method="post" action="/admin/sessions/{{ session.public_id }}/delete" class="row-actions">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button class="btn btn-danger">Delete permanently</button>
+    <span class="muted small">
+      Removes the record, the files, the chat and the attachments. Anyone
+      still connected is disconnected.
+    </span>
+  </form>
 </section>
+
+{% if session.status != 'ended' %}
+<section class="card">
+  <h2 class="section-title">Settings</h2>
+  <p class="muted small">
+    The same switches the host has in the extension, for when they are not
+    around to flip them.
+  </p>
+  <form method="post" action="/admin/sessions/{{ session.public_id }}/edit">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <div class="field-row">
+      <label class="field">
+        <span>Title</span>
+        <input class="input" type="text" name="title" maxlength="200" value="{{ session.title }}" />
+      </label>
+      <label class="field">
+        <span>Maximum participants</span>
+        <input class="input" type="number" name="max_participants" min="1" max="500"
+               value="{{ session.max_participants }}" />
+      </label>
+    </div>
+    <label class="check">
+      <input type="checkbox" name="allow_guests" {% if session.allow_guests %}checked{% endif %} />
+      <span>Let new people join</span>
+    </label>
+    <label class="check">
+      <input type="checkbox" name="require_approval" {% if session.require_approval %}checked{% endif %} />
+      <span>The host has to approve each one</span>
+    </label>
+    <div class="row-actions">
+      <button class="btn btn-primary">Save settings</button>
+    </div>
+  </form>
+</section>
+{% endif %}
 
 <div class="split">
   <section class="col-main">
@@ -80,7 +134,10 @@
       </tbody>
     </table>
 
-    <h2 class="section-title">Files</h2>
+    <h2 class="section-title">
+      Files
+      <a class="btn btn-small" href="/admin/sessions/{{ session.public_id }}/watch">Open the live view</a>
+    </h2>
     <table class="table card">
       <thead>
         <tr><th>Path</th><th class="num">Bytes</th><th>Updated</th></tr>
@@ -100,6 +157,16 @@
   </section>
 
   <section class="col-side">
+    <h2 class="section-title">Contents</h2>
+    <div class="card">
+      <dl class="kv">
+        <dt>Files</dt><dd>{{ files | length }}{% if files | length == 200 %}+{% endif %}</dd>
+        <dt>Chat</dt><dd>{{ counts.chat }} message(s)</dd>
+        <dt>Board</dt><dd>{{ counts.strokes }} stroke(s)</dd>
+        <dt>Attachments</dt><dd>{{ counts.attachments }}</dd>
+      </dl>
+    </div>
+
     <h2 class="section-title">Session log</h2>
     <ol class="feed">
       {% for e in events %}

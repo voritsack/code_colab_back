@@ -406,3 +406,89 @@ a.btn:hover { text-decoration: none; }
   left: -9999px;
   opacity: 0;
 }
+
+/* -- watching one session --------------------------------------------- */
+
+.head-actions { display: flex; align-items: center; gap: 10px; }
+.section-title .btn-small { margin-left: 10px; vertical-align: middle; }
+
+.watch {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) 300px;
+  gap: 14px;
+  align-items: start;
+}
+@media (max-width: 1080px) {
+  .watch { grid-template-columns: 1fr; }
+}
+.watch .card { padding: 0; overflow: hidden; }
+.watch-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.watch-head .section-title { margin: 0; }
+.watch-side { display: flex; flex-direction: column; gap: 14px; }
+.watch-side .card { padding: 14px; }
+.watch-side .section-title { margin-top: 0; }
+
+.filelist, .peoplelist { list-style: none; margin: 0; padding: 0; max-height: 62vh; overflow: auto; }
+.fileitem, .personitem {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fileitem:last-child, .personitem:last-child { border-bottom: none; }
+.fileitem.is-open { background: var(--surface-2); }
+.filebtn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+.filebtn:hover .path { color: var(--accent); }
+
+.code {
+  margin: 0;
+  padding: 14px;
+  max-height: 62vh;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 4;
+}
+
+/* -- admin forms ------------------------------------------------------- */
+
+.field-row { display: flex; gap: 14px; flex-wrap: wrap; }
+.field-row .field { flex: 1 1 220px; }
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 0.9rem;
+}
+.field input[type="file"] {
+  width: 100%;
+  padding: 9px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+}

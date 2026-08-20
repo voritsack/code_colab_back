@@ -1,0 +1,121 @@
+{% extends "base.html" %} {% block title %}Maintenance · {{ settings.app_name }}{% endblock %}
+{% block nav_maint %}active{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Maintenance</h1>
+    <p class="muted">
+      What this server is still holding on to, and how to let go of it early.
+    </p>
+  </div>
+</div>
+
+{% if done %}
+<p class="alert">Pruned: {{ done }}.</p>
+{% endif %}
+
+<section class="kpis">
+  <div class="kpi">
+    <span class="kpi-label">Live sessions</span>
+    <span class="kpi-value">{{ overview.sessions_live }}</span>
+  </div>
+  <div class="kpi">
+    <span class="kpi-label">Ended sessions</span>
+    <span class="kpi-value">{{ overview.sessions_ended }}</span>
+  </div>
+  <div class="kpi">
+    <span class="kpi-label">Stored files</span>
+    <span class="kpi-value">{{ overview.files }}</span>
+  </div>
+  <div class="kpi">
+    <span class="kpi-label">File bytes</span>
+    <span class="kpi-value">{{ (overview.file_bytes / 1048576) | round(1) }} MB</span>
+  </div>
+  <div class="kpi">
+    <span class="kpi-label">Attachments</span>
+    <span class="kpi-value">{{ overview.attachments }}</span>
+  </div>
+  <div class="kpi">
+    <span class="kpi-label">Attachment bytes</span>
+    <span class="kpi-value">{{ (overview.attachment_bytes / 1048576) | round(1) }} MB</span>
+  </div>
+</section>
+
+<div class="split">
+  <section class="col-main stack">
+    <article class="card">
+      <h2 class="section-title">Prune now</h2>
+      <p class="muted small">
+        The sweeper already does the first of these every
+        {{ overview.sweep_interval_minutes }} minutes. The rest ignore the
+        retention windows, for a server that is out of room today. Nothing
+        here touches a session that is still live.
+      </p>
+      <div class="row-actions">
+        <form method="post" action="/admin/maintenance/prune">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <input type="hidden" name="scope" value="sweep" />
+          <button class="btn btn-primary">Run the sweep</button>
+        </form>
+        <form method="post" action="/admin/maintenance/prune">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <input type="hidden" name="scope" value="idle" />
+          <button class="btn">End idle sessions</button>
+        </form>
+        <form method="post" action="/admin/maintenance/prune">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <input type="hidden" name="scope" value="artefacts" />
+          <button class="btn">Free ended sessions' files</button>
+        </form>
+        <form method="post" action="/admin/maintenance/prune">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <input type="hidden" name="scope" value="ended" />
+          <button class="btn btn-danger">Delete all ended sessions</button>
+        </form>
+      </div>
+    </article>
+
+    <article class="card">
+      <h2 class="section-title">What is being kept</h2>
+      <table class="table">
+        <tbody>
+          <tr><td>Session files</td><td class="num">{{ overview.files }}</td></tr>
+          <tr><td>Chat messages</td><td class="num">{{ overview.chat_messages }}</td></tr>
+          <tr><td>Board strokes</td><td class="num">{{ overview.board_strokes }}</td></tr>
+          <tr><td>Attachments on disk</td><td class="num">{{ overview.attachments }}</td></tr>
+          <tr><td>Participants</td><td class="num">{{ overview.participants }}</td></tr>
+          <tr><td>Activity events</td><td class="num">{{ overview.events }}</td></tr>
+        </tbody>
+      </table>
+    </article>
+  </section>
+
+  <section class="col-side">
+    <h2 class="section-title">Schedule</h2>
+    <div class="card">
+      <dl class="kv">
+        <dt>Sweep every</dt>
+        <dd>{{ overview.sweep_interval_minutes }} min</dd>
+        <dt>Idle timeout</dt>
+        <dd>{{ overview.idle_timeout_minutes }} min</dd>
+        <dt>Files kept</dt>
+        <dd>
+          {{ overview.artefact_retention_hours }} h after a session ends
+          {%- if not overview.artefact_retention_hours %} (never deleted){% endif %}
+        </dd>
+        <dt>Records kept</dt>
+        <dd>
+          {{ overview.retention_days }} days
+          {%- if not overview.retention_days %} (forever){% endif %}
+        </dd>
+      </dl>
+      <p class="muted small">
+        Set by ARTEFACT_RETENTION_HOURS, RETENTION_DAYS,
+        SESSION_IDLE_TIMEOUT_MINUTES and SWEEP_INTERVAL_MINUTES in the
+        server's environment.
+      </p>
+    </div>
+  </section>
+</div>
+{% endblock %}
