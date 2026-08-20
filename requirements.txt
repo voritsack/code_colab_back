@@ -1,0 +1,8 @@
+Django>=5.2
+channels
+daphne
+django-cors-headers
+djangorestframework
+djangorestframework-simplejwt
+mysqlclient
+python-dotenv

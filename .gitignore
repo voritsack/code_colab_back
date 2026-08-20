@@ -1,0 +1,23 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Data / uploads
+*.sqlite3
+*.db
+media/
+staticfiles/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
