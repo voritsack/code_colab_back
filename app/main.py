@@ -20,8 +20,10 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from . import __version__
 from .config import settings
 from .db import SessionLocal, engine, init_models
+from . import storage
 from .models import (
     STATUS_ENDED,
+    Attachment,
     BoardStroke,
     ChatMessage,
     CollabSession,
@@ -30,7 +32,7 @@ from .models import (
     User,
     utcnow,
 )
-from .routers import admin, extension, public, sessions, ws
+from .routers import admin, attachments, extension, public, sessions, ws
 from .security import hash_password
 from .templating import STATIC_DIR
 
@@ -142,6 +144,24 @@ async def sweep_once() -> None:
             session.status = STATUS_ENDED
             session.ended_at = now
 
+        # Attachments belong to the session that carried them, and go as soon
+        # as it ends - whether it ended cleanly or the process died before it
+        # could tidy up after itself.
+        detached = 0
+        orphaned = (
+            await db.scalars(
+                select(Attachment)
+                .join(CollabSession, Attachment.session_id == CollabSession.id)
+                .where(CollabSession.status == STATUS_ENDED)
+            )
+        ).all()
+        if orphaned:
+            storage.remove_many(row.stored_name for row in orphaned)
+            await db.execute(
+                delete(Attachment).where(Attachment.id.in_([r.id for r in orphaned]))
+            )
+            detached = len(orphaned)
+
         # Stage one: an ended session's contents. These are what actually
         # take up room - a shared workspace can be tens of megabytes - and
         # they are dead weight once the session is over.
@@ -182,7 +202,7 @@ async def sweep_once() -> None:
                 ).all()
             )
             if doomed:
-                for model in (BoardStroke, ChatMessage, SessionFile, Participant):
+                for model in (BoardStroke, ChatMessage, SessionFile, Attachment, Participant):
                     await db.execute(
                         delete(model).where(model.session_id.in_(doomed))
                     )
@@ -193,12 +213,18 @@ async def sweep_once() -> None:
 
         await db.commit()
 
-    if stale or purged or stripped:
+        # Files on disk with no row pointing at them - a crash between the
+        # write and the commit - would otherwise sit there forever.
+        known = set((await db.scalars(select(Attachment.stored_name))).all())
+        storage.sweep_orphans(known)
+
+    if stale or purged or stripped or detached:
         logger.info(
             "Sweep: ended %s idle session(s), freed %s artefact row(s), "
-            "purged %s expired session(s)",
+            "deleted %s attachment(s), purged %s expired session(s)",
             len(stale),
             stripped,
+            detached,
             purged,
         )
 
@@ -301,6 +327,7 @@ def create_app() -> FastAPI:
     app.include_router(public.router)
     app.include_router(extension.router)
     app.include_router(sessions.router)
+    app.include_router(attachments.router)
     app.include_router(ws.router)
     app.include_router(admin.router)
 

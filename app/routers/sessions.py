@@ -391,7 +391,7 @@ async def upload_snapshot(
 
     from ..actions import broadcast_snapshot
 
-    await broadcast_snapshot(db, session)
+    await broadcast_snapshot(db, session, exclude_participant=host.id)
     return MessageOut(detail=f"Stored {len(payload.files)} file(s)")
 
 

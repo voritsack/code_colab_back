@@ -210,6 +210,39 @@ class BoardStroke(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
+class Attachment(Base):
+    """A file handed round the session that is not part of the project.
+
+    An image, a zip, a PDF - things nobody wants merged into the workspace
+    but everybody needs a copy of. The bytes live on disk rather than in the
+    database: this server talks to shared hosting with a 16 MB packet limit,
+    and a row per megabyte is the wrong shape for it.
+
+    Deleted with the session, by design. Nothing here is meant to outlive it.
+    """
+
+    __tablename__ = "attachments"
+    __table_args__ = (Index("ix_attachment_session", "session_id", "id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), index=True
+    )
+    participant_id: Mapped[int | None] = mapped_column(
+        ForeignKey("participants.id", ondelete="SET NULL"), nullable=True
+    )
+    uploaded_by: Mapped[str] = mapped_column(String(120), default="")
+
+    # What the uploader called it, sanitised for display and for saving.
+    name: Mapped[str] = mapped_column(String(255))
+    # What it is called on disk: opaque, so a crafted name cannot escape.
+    stored_name: Mapped[str] = mapped_column(String(80), unique=True)
+    content_type: Mapped[str] = mapped_column(String(120), default="application/octet-stream")
+    size: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
 class ActivityEvent(Base):
     """Append-only feed powering the admin dashboard."""
 

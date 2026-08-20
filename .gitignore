@@ -24,3 +24,6 @@ staticfiles/
 
 # Local development database
 codecolab-dev.db
+
+# Attachment storage
+data/

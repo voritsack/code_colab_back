@@ -14,9 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import settings
 from .hub import hub
+from . import storage
 from .models import (
     ROLE_EDITOR,
     ROLE_HOST,
+    Attachment,
     BoardStroke,
     ChatMessage,
     ROLE_VIEWER,
@@ -115,11 +117,25 @@ async def send_side_channels(
         participant_id,
         {"type": "file_locks", "locks": hub.file_locks(session.public_id)},
     )
+    await hub.send_to_participant(
+        session.public_id,
+        participant_id,
+        {"type": "attachments", "attachments": await attachment_list(db, session)},
+    )
 
 
-async def broadcast_snapshot(db: AsyncSession, session: CollabSession) -> None:
+async def broadcast_snapshot(
+    db: AsyncSession, session: CollabSession, *, exclude_participant: int | None = None
+) -> None:
+    """Push the stored project to everyone.
+
+    The uploader is skipped by default: sending someone their own files back
+    makes them write out a round-tripped copy of what they already have,
+    which is a no-op for text and quietly corrupts anything that is not
+    valid UTF-8.
+    """
     for conn in hub.connections(session.public_id):
-        if conn.approved:
+        if conn.approved and conn.participant_id != exclude_participant:
             await send_snapshot(db, session, conn.participant_id)
 
 
@@ -315,6 +331,55 @@ async def clear_board(
     }
 
 
+async def attachment_list(
+    db: AsyncSession, session: CollabSession
+) -> list[dict[str, Any]]:
+    rows = (
+        await db.scalars(
+            select(Attachment)
+            .where(Attachment.session_id == session.id)
+            .order_by(Attachment.id)
+        )
+    ).all()
+    return [
+        {
+            "id": row.id,
+            "name": row.name,
+            "size": row.size,
+            "content_type": row.content_type,
+            "uploaded_by": row.uploaded_by,
+            "participant_id": row.participant_id,
+        }
+        for row in rows
+    ]
+
+
+async def broadcast_attachments(db: AsyncSession, session: CollabSession) -> None:
+    await hub.broadcast(
+        session.public_id,
+        {"type": "attachments", "attachments": await attachment_list(db, session)},
+    )
+
+
+async def purge_attachments(db: AsyncSession, session: CollabSession) -> int:
+    """Delete a session's attachments, bytes and rows both.
+
+    Called when the session ends. These are transfers, not archives - keeping
+    them after the session is over would only accumulate other people's files
+    on a server that never agreed to host them.
+    """
+    rows = (
+        await db.scalars(
+            select(Attachment).where(Attachment.session_id == session.id)
+        )
+    ).all()
+    if not rows:
+        return 0
+    storage.remove_many(row.stored_name for row in rows)
+    await db.execute(delete(Attachment).where(Attachment.session_id == session.id))
+    return len(rows)
+
+
 async def broadcast_locks(session: CollabSession) -> None:
     await hub.broadcast(
         session.public_id,
@@ -495,6 +560,16 @@ async def set_status(
             participant.connected = False
             if participant.left_at is None:
                 participant.left_at = utcnow()
+        # Transfers do not outlive the session that carried them.
+        removed = await purge_attachments(db, session)
+        if removed:
+            await log_event(
+                db,
+                kind="attachment.purged",
+                message=f"{removed} attachment(s) deleted with the session",
+                actor=actor,
+                session=session,
+            )
 
     await log_event(
         db,

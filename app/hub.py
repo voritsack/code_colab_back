@@ -55,6 +55,8 @@ class Hub:
         self._status: dict[str, str] = {}
         # room -> path -> (participant_id, expires at monotonic seconds)
         self._file_locks: dict[str, dict[str, tuple[int, float]]] = {}
+        # room -> the task waiting to end it because nobody is left
+        self._empty_timers: dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
 
     # -- room status cache -----------------------------------------------
@@ -70,6 +72,21 @@ class Hub:
 
     def forget_room_status(self, session_public_id: str) -> None:
         self._status.pop(session_public_id, None)
+
+    # -- ending a session nobody is in ------------------------------------
+
+    def arm_empty_timer(self, session_public_id: str, task: asyncio.Task) -> None:
+        self.cancel_empty_timer(session_public_id)
+        self._empty_timers[session_public_id] = task
+
+    def cancel_empty_timer(self, session_public_id: str) -> None:
+        """Called whenever somebody connects: the room is not empty after all."""
+        task = self._empty_timers.pop(session_public_id, None)
+        if task is not None and not task.done():
+            task.cancel()
+
+    def forget_empty_timer(self, session_public_id: str) -> None:
+        self._empty_timers.pop(session_public_id, None)
 
     # -- soft file locks -------------------------------------------------
     #

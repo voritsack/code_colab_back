@@ -11,12 +11,15 @@ header decides who you are; everything after that is authorisation:
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import time
 from collections import deque
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..actions import (
@@ -56,6 +59,8 @@ from ..models import (
 from ..security import SessionAuthError, resolve_session_token
 from ..services import log_event, participant_payload
 from ..utils import UnsafePathError, sanitize_relative_path
+
+log = logging.getLogger("codecolab")
 
 router = APIRouter(tags=["websocket"])
 
@@ -150,6 +155,9 @@ async def session_socket(websocket: WebSocket, public_id: str) -> None:
         )
         await hub.register(conn)
         hub.set_room_status(session.public_id, session.status)
+        # Whoever left last may have started a countdown to end this session.
+        # Somebody is here now.
+        hub.cancel_empty_timer(session.public_id)
 
         participant.connected = True
         participant.last_seen_at = utcnow()
@@ -174,6 +182,14 @@ async def _greet(
     participant: Participant,
     session: CollabSession,
 ) -> None:
+    # The connection is registered before we get here so the host can be told
+    # someone is waiting - which means the host can admit them before this
+    # runs. Re-read the row, or we would greet an already-approved person as
+    # pending and undo their own approval.
+    await db.refresh(participant)
+    conn.approved = participant.state == STATE_APPROVED
+    conn.role = participant.role
+
     await hub.send(
         conn,
         {
@@ -262,6 +278,47 @@ async def _farewell(
     if not hub.connections(session.public_id):
         hub.forget_room_status(session.public_id)
         hub.forget_locks(session.public_id)
+        _start_empty_countdown(session.public_id)
+
+
+def _start_empty_countdown(public_id: str) -> None:
+    """End a session once everybody has been gone a while.
+
+    Not immediately: a dropped connection looks exactly like the last person
+    leaving, and ending the session under a host whose wifi hiccuped would be
+    worse than an empty room sitting there for a minute.
+    """
+    if settings.empty_session_grace_seconds <= 0:
+        return
+    hub.arm_empty_timer(public_id, asyncio.create_task(_end_if_still_empty(public_id)))
+
+
+async def _end_if_still_empty(public_id: str) -> None:
+    try:
+        await asyncio.sleep(settings.empty_session_grace_seconds)
+    except asyncio.CancelledError:
+        return
+
+    if hub.connections(public_id):
+        return
+
+    try:
+        async with SessionLocal() as db:
+            session = await db.scalar(
+                select(CollabSession).where(CollabSession.public_id == public_id)
+            )
+            if session is None or session.status == STATUS_ENDED:
+                return
+            await set_status(db, session, STATUS_ENDED, actor="an empty room")
+            log.info(
+                "Ended %s: nobody connected for %ss",
+                public_id,
+                settings.empty_session_grace_seconds,
+            )
+    except Exception:  # noqa: BLE001 - a background task must not take the app down
+        log.exception("Could not end the empty session %s", public_id)
+    finally:
+        hub.forget_empty_timer(public_id)
 
 
 async def _pump(db: AsyncSession, conn: Connection, session: CollabSession) -> None:

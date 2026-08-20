@@ -1,7 +1,7 @@
 {
-  "version": "2.3.0",
-  "file": "codecolab-2.3.0.vsix",
-  "sha256": "f3f5a5494798aeb3723decfa231a713d8d01aa0a34e55a0f39c5c2c8af32d627",
-  "notes": "Credential files are no longer shared with the session.",
-  "published_at": "2026-08-20T20:04:57+00:00"
+  "version": "2.4.0",
+  "file": "codecolab-2.4.0.vsix",
+  "sha256": "f6c0eb30be36cdcd2c13f6a2821390e3ce5bac62abf8f7071cf9ed2f94d6e9e4",
+  "notes": "File transfer, unlock skipped files, auto-end empty sessions.",
+  "published_at": "2026-08-20T20:36:48+00:00"
 }

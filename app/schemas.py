@@ -167,5 +167,15 @@ class SnapshotOut(BaseModel):
     files: list[FileOut]
 
 
+class AttachmentOut(BaseModel):
+    id: int
+    name: str
+    size: int
+    content_type: str
+    uploaded_by: str
+    participant_id: int | None
+    created_at: datetime
+
+
 class MessageOut(BaseModel):
     detail: str

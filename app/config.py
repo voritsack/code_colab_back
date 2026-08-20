@@ -107,6 +107,11 @@ class Settings(BaseSettings):
     max_participants: int = 25
     session_idle_timeout_minutes: int = 240
 
+    # A session with nobody connected ends itself after this long. The delay
+    # matters: without it a dropped wifi connection would end the session
+    # before the host's laptop had finished reconnecting.
+    empty_session_grace_seconds: int = 120
+
     # Housekeeping, run in the background rather than by hand. Ended sessions
     # keep the files that were shared into them, so they should not live
     # forever; 0 disables the purge.
@@ -137,6 +142,15 @@ class Settings(BaseSettings):
     # away does not block anyone.
     file_lock_seconds: int = 12
 
+    # -- Attachments ------------------------------------------------------
+    # Files passed round a session that are not part of the project. Stored
+    # on disk, not in the database - shared hosting caps a single row write
+    # at 16 MB and would not thank us for the traffic either.
+    attachment_dir: str = "./data/attachments"
+    max_attachment_bytes: int = 25_000_000
+    max_session_attachment_bytes: int = 150_000_000
+    max_attachments_per_session: int = 60
+
     # -- Rate limits (requests per window) -------------------------------
     login_rate_limit: int = 10
     login_rate_window_seconds: int = 300
@@ -154,7 +168,7 @@ class Settings(BaseSettings):
 
     # -- VS Code deep link ----------------------------------------------
     # <publisher>.<name> from the extension's package.json.
-    vscode_extension_id: str = "local.codecolab"
+    vscode_extension_id: str = "voritsack.codecolab"
     vscode_marketplace_url: str = ""
 
     @field_validator("public_base_url")
