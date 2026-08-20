@@ -1,7 +1,7 @@
 {
-  "version": "2.6.3",
-  "file": "codecolab-2.6.3.vsix",
-  "sha256": "30168bbb6eeaae01dfdbc8ac1aa5493c9926417b812aea96704e92309e85a6f3",
-  "notes": "what changed",
-  "published_at": "2026-08-20T22:48:02+00:00"
+  "version": "2.6.4",
+  "file": "codecolab-2.6.4.vsix",
+  "sha256": "1144c358c66eb7cc2515196dba0fb2d292c010a80ed9c8de0372946194b23273",
+  "notes": "publisher is now codecolab; fix vsix content types",
+  "published_at": "2026-08-20T23:32:56+00:00"
 }
