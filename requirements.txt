@@ -1,8 +1,16 @@
-Django>=5.2
-channels
-daphne
-django-cors-headers
-djangorestframework
-djangorestframework-simplejwt
-mysqlclient
-python-dotenv
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+email-validator>=2.1.0
+SQLAlchemy>=2.0.30
+greenlet>=3.0.0
+aiosqlite>=0.20.0
+PyJWT>=2.8.0
+bcrypt>=4.1.0
+Jinja2>=3.1.4
+python-multipart>=0.0.9
+
+# Optional database drivers - install the one matching DATABASE_URL
+# asyncpg>=0.29.0        # postgresql+asyncpg://...
+# aiomysql>=0.2.0        # mysql+aiomysql://...

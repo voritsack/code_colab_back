@@ -1,0 +1,106 @@
+{% extends "base.html" %} {% block title %}Dashboard · {{ settings.app_name }}{% endblock %}
+{% block nav_dash %}active{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Live overview</h1>
+    <p class="muted">
+      Who is in a session right now, and what file they have open.
+    </p>
+  </div>
+  <div class="live-flag">
+    <span class="pulse"></span>
+    <span data-live-clock>updated just now</span>
+  </div>
+</div>
+
+<section class="kpis" data-kpis>
+  <div class="kpi">
+    <span class="kpi-label">Live sessions</span>
+    <span class="kpi-value" data-kpi="sessions_live">{{ stats.totals.sessions_live }}</span>
+  </div>
+  <div class="kpi">
+    <span class="kpi-label">People online</span>
+    <span class="kpi-value" data-kpi="participants_online">{{ stats.totals.participants_online }}</span>
+  </div>
+  <div class="kpi">
+    <span class="kpi-label">Open sockets</span>
+    <span class="kpi-value" data-kpi="socket_connections">{{ stats.totals.socket_connections }}</span>
+  </div>
+  <div class="kpi">
+    <span class="kpi-label">Sessions today</span>
+    <span class="kpi-value" data-kpi="sessions_today">{{ stats.totals.sessions_today }}</span>
+  </div>
+  <div class="kpi">
+    <span class="kpi-label">Files touched (1h)</span>
+    <span class="kpi-value" data-kpi="files_touched_last_hour">{{ stats.totals.files_touched_last_hour }}</span>
+  </div>
+  <div class="kpi">
+    <span class="kpi-label">Accounts</span>
+    <span class="kpi-value" data-kpi="users">{{ stats.totals.users }}</span>
+  </div>
+</section>
+
+<div class="split">
+  <section class="col-main">
+    <h2 class="section-title">Sessions</h2>
+    <div data-sessions class="stack">
+      {% for row in stats.sessions %}
+      <article class="card session-card">
+        <header class="session-head">
+          <div>
+            <a class="session-title" href="/admin/sessions/{{ row.public_id }}">{{ row.title }}</a>
+            <p class="muted small">
+              host {{ row.host }} · code <code>{{ row.join_code }}</code> ·
+              {{ row.files }} files
+            </p>
+          </div>
+          <span class="pill pill-{{ row.status }}">{{ row.status }}</span>
+        </header>
+        <table class="table">
+          <thead>
+            <tr><th>Participant</th><th>Role</th><th>Working on</th><th class="num">Edits</th></tr>
+          </thead>
+          <tbody>
+            {% for p in row.participants %}
+            <tr>
+              <td>
+                <span class="dot {% if p.connected %}dot-on{% endif %}"></span>
+                {{ p.name }}{% if p.guest %} <span class="tag">guest</span>{% endif %}
+                {% if p.state == 'pending' %} <span class="tag tag-warn">waiting</span>{% endif %}
+              </td>
+              <td>{{ p.role }}</td>
+              <td class="path">{{ p.active_file or '—' }}</td>
+              <td class="num">{{ p.edits }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </article>
+      {% else %}
+      <p class="empty">No live sessions right now.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="col-side">
+    <h2 class="section-title">Activity</h2>
+    <ol class="feed" data-feed>
+      {% for e in stats.events %}
+      <li>
+        <span class="feed-kind">{{ e.kind }}</span>
+        <span class="feed-msg">{{ e.message }}</span>
+        <span class="feed-actor">{{ e.actor }}</span>
+      </li>
+      {% else %}
+      <li class="empty">Nothing yet.</li>
+      {% endfor %}
+    </ol>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/dashboard.js" defer></script>
+{% endblock %}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}{{ settings.app_name }}{% endblock %}</title>
+    <link rel="stylesheet" href="/static/app.css" />
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    {% block chrome %}
+    <header class="topbar">
+      <a class="brand" href="/admin">
+        <span class="brand-dot"></span>
+        {{ settings.app_name }}
+      </a>
+      {% if admin %}
+      <nav class="topnav">
+        <a href="/admin" class="{% block nav_dash %}{% endblock %}">Dashboard</a>
+        <a href="/admin/users" class="{% block nav_users %}{% endblock %}">Users</a>
+      </nav>
+      <form method="post" action="/admin/logout" class="topbar-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <span class="who">{{ admin.name }}</span>
+        <button type="submit" class="btn btn-ghost">Sign out</button>
+      </form>
+      {% endif %}
+    </header>
+    {% endblock %}
+
+    <main class="page">{% block content %}{% endblock %}</main>
+
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

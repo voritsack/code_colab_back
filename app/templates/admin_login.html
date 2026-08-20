@@ -1,0 +1,36 @@
+{% extends "base.html" %} {% block title %}Sign in · {{ settings.app_name }}{% endblock %}
+
+{% block chrome %}{% endblock %}
+
+{% block content %}
+<div class="auth-shell">
+  <form class="card auth-card" method="post" action="/admin/login">
+    <div class="auth-head">
+      <span class="brand-dot"></span>
+      <h1>{{ settings.app_name }}</h1>
+      <p class="muted">Administrator sign-in</p>
+    </div>
+
+    {% if error %}
+    <p class="alert alert-error">{{ error }}</p>
+    {% endif %}
+
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+
+    <label class="field">
+      <span>Email</span>
+      <input type="email" name="email" autocomplete="username" required autofocus />
+    </label>
+
+    <label class="field">
+      <span>Password</span>
+      <input type="password" name="password" autocomplete="current-password" required />
+    </label>
+
+    <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+    <p class="muted small">
+      Only accounts flagged as administrators can sign in here.
+    </p>
+  </form>
+</div>
+{% endblock %}

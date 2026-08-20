@@ -1,0 +1,39 @@
+{% extends "base.html" %} {% block title %}{{ settings.app_name }}{% endblock %}
+
+{% block chrome %}
+<header class="topbar">
+  <a class="brand" href="/"><span class="brand-dot"></span>{{ settings.app_name }}</a>
+  <nav class="topnav"><a href="/admin">Admin</a></nav>
+</header>
+{% endblock %}
+
+{% block content %}
+<div class="join-shell">
+  <article class="card join-card">
+    <p class="eyebrow">Live collaborative coding</p>
+    <h1>{{ settings.app_name }}</h1>
+    <p class="muted">
+      This server backs a VS Code extension. There is no web editor: the host
+      generates a link from their workspace, invited people open it, and the
+      code streams straight into their own editor.
+    </p>
+
+    <div class="code-block">
+      <span class="muted small">Have a code?</span>
+      <form class="code-row" action="/j" method="get" data-join-form>
+        <input class="input" name="code" placeholder="abc-defg-hij" aria-label="Join code" />
+        <button class="btn btn-primary" type="submit">Open</button>
+      </form>
+    </div>
+
+    <p class="muted small">
+      API base <code>{{ settings.public_base_url }}</code> ·
+      health <code>/healthz</code>
+    </p>
+  </article>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/join.js" defer></script>
+{% endblock %}

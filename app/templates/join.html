@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}
+  {% if session %}Join {{ session.title }}{% else %}Session not found{% endif %} ·
+  {{ settings.app_name }}
+{% endblock %}
+
+{% block chrome %}
+<header class="topbar">
+  <a class="brand" href="/"><span class="brand-dot"></span>{{ settings.app_name }}</a>
+</header>
+{% endblock %}
+
+{% block content %}
+<div class="join-shell">
+  {% if session %}
+  <article class="card join-card" data-deep-link="{{ deep_link }}" data-code="{{ code }}">
+    <p class="eyebrow">You have been invited to a live coding session</p>
+    <h1>{{ session.title }}</h1>
+    <p class="muted">
+      hosted by {{ host_name }}
+      {% if session.workspace_name %} · workspace <code>{{ session.workspace_name }}</code>{% endif %}
+      · {{ participants }} in the room
+    </p>
+
+    {% if session.status == 'paused' %}
+    <p class="alert alert-warn">The host has paused this session. You can still join and wait.</p>
+    {% endif %}
+
+    <a class="btn btn-primary btn-block btn-lg" href="{{ deep_link }}">
+      Open in VS Code
+    </a>
+
+    <div class="code-block">
+      <span class="muted small">or join by code from the command palette</span>
+      <div class="code-row">
+        <code class="code-big" data-code-text>{{ code }}</code>
+        <button class="btn btn-small" data-copy>Copy</button>
+      </div>
+    </div>
+
+    <ol class="steps">
+      <li>Install the <strong>{{ settings.app_name }}</strong> extension in VS Code.</li>
+      <li>Open the folder you want to work in (or an empty one to receive the host's files).</li>
+      <li>
+        Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> and run
+        <em>{{ settings.app_name }}: Join session</em>, then paste the code above.
+      </li>
+      <li>The host gets a prompt and admits you.</li>
+    </ol>
+
+    {% if session.allow_guests %}
+    <p class="muted small">
+      No account needed - you will be asked for a display name.
+    </p>
+    {% else %}
+    <p class="muted small">
+      This session is restricted to signed-in accounts.
+    </p>
+    {% endif %}
+  </article>
+  {% else %}
+  <article class="card join-card">
+    <h1>That link is not live</h1>
+    <p class="muted">
+      The code <code>{{ code }}</code> does not match any running session. It may
+      have ended, or the link may have been mistyped.
+    </p>
+    <p class="muted small">Ask the host to generate a fresh link.</p>
+  </article>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/join.js" defer></script>
+{% endblock %}
