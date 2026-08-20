@@ -140,6 +140,20 @@ proxy strips inbound `X-Forwarded-For` — the rate limiter trusts it.
 
 ---
 
+## Tests
+
+```bash
+pip install httpx websockets
+python -m uvicorn app.main:app --port 8000     # in another terminal
+python tests/e2e.py                            # or: python tests/e2e.py https://your-host
+```
+
+Covers registration, login, refresh rotation, session creation, snapshot
+upload, path-traversal rejection, the join page, the lobby, approve/deny,
+role changes, pause/resume, ending a session, and the admin dashboard
+including its CSRF check. Admin credentials come from `ADMIN_EMAIL` /
+`ADMIN_PASSWORD` in the environment or `.env`.
+
 ## Layout
 
 ```
