@@ -1,7 +1,7 @@
 {
   "version": "2.4.0",
   "file": "codecolab-2.4.0.vsix",
-  "sha256": "f6c0eb30be36cdcd2c13f6a2821390e3ce5bac62abf8f7071cf9ed2f94d6e9e4",
+  "sha256": "43ae2f16537cd0312e5c854c04176db7f0fa7a549641e1c3afd892609ba2dea0",
   "notes": "File transfer, unlock skipped files, auto-end empty sessions.",
-  "published_at": "2026-08-20T20:36:48+00:00"
+  "published_at": "2026-08-20T20:46:50+00:00"
 }
