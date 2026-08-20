@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -11,15 +13,24 @@ from datetime import timedelta
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
 from .config import settings
 from .db import SessionLocal, engine, init_models
-from .models import STATUS_ENDED, CollabSession, Participant, User, utcnow
-from .routers import admin, public, sessions, ws
+from .models import (
+    STATUS_ENDED,
+    BoardStroke,
+    ChatMessage,
+    CollabSession,
+    Participant,
+    SessionFile,
+    User,
+    utcnow,
+)
+from .routers import admin, extension, public, sessions, ws
 from .security import hash_password
 from .templating import STATIC_DIR
 
@@ -109,14 +120,112 @@ async def close_orphaned_sessions() -> None:
             )
 
 
+async def sweep_once() -> None:
+    """End idle sessions and delete the ones that finished long ago.
+
+    Without this, a host who closes their laptop leaves a session showing as
+    live for good, and every file ever shared stays in the database.
+    """
+    now = utcnow()
+    idle_cutoff = now - timedelta(minutes=settings.session_idle_timeout_minutes)
+
+    async with SessionLocal() as db:
+        stale = (
+            await db.scalars(
+                select(CollabSession).where(
+                    CollabSession.status != STATUS_ENDED,
+                    CollabSession.last_activity_at < idle_cutoff,
+                )
+            )
+        ).all()
+        for session in stale:
+            session.status = STATUS_ENDED
+            session.ended_at = now
+
+        # Stage one: an ended session's contents. These are what actually
+        # take up room - a shared workspace can be tens of megabytes - and
+        # they are dead weight once the session is over.
+        stripped = 0
+        if settings.artefact_retention_hours > 0:
+            artefact_cutoff = now - timedelta(hours=settings.artefact_retention_hours)
+            spent = list(
+                (
+                    await db.scalars(
+                        select(CollabSession.id).where(
+                            CollabSession.status == STATUS_ENDED,
+                            CollabSession.last_activity_at < artefact_cutoff,
+                        )
+                    )
+                ).all()
+            )
+            if spent:
+                for model in (SessionFile, BoardStroke, ChatMessage):
+                    result = await db.execute(
+                        delete(model).where(model.session_id.in_(spent))
+                    )
+                    stripped += result.rowcount or 0
+
+        # Stage two: the session row and its roster, once it is old enough
+        # that nobody is going to look it up in the dashboard again.
+        purged = 0
+        if settings.retention_days > 0:
+            old_cutoff = now - timedelta(days=settings.retention_days)
+            doomed = list(
+                (
+                    await db.scalars(
+                        select(CollabSession.id).where(
+                            CollabSession.status == STATUS_ENDED,
+                            CollabSession.ended_at.isnot(None),
+                            CollabSession.ended_at < old_cutoff,
+                        )
+                    )
+                ).all()
+            )
+            if doomed:
+                for model in (BoardStroke, ChatMessage, SessionFile, Participant):
+                    await db.execute(
+                        delete(model).where(model.session_id.in_(doomed))
+                    )
+                await db.execute(
+                    delete(CollabSession).where(CollabSession.id.in_(doomed))
+                )
+                purged = len(doomed)
+
+        await db.commit()
+
+    if stale or purged or stripped:
+        logger.info(
+            "Sweep: ended %s idle session(s), freed %s artefact row(s), "
+            "purged %s expired session(s)",
+            len(stale),
+            stripped,
+            purged,
+        )
+
+
+async def sweeper() -> None:
+    interval = max(settings.sweep_interval_minutes, 1) * 60
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            await sweep_once()
+        except Exception:  # noqa: BLE001 - housekeeping must never kill the app
+            logger.exception("Sweep failed")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await init_models()
     await bootstrap_admin()
     await close_orphaned_sessions()
+
+    task = asyncio.create_task(sweeper())
     try:
         yield
     finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
         # Close pooled connections on the way out, so the driver is not left
         # tidying up sockets after the event loop has gone.
         await engine.dispose()
@@ -190,6 +299,7 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     app.include_router(public.router)
+    app.include_router(extension.router)
     app.include_router(sessions.router)
     app.include_router(ws.router)
     app.include_router(admin.router)

@@ -6,15 +6,19 @@ it was clicked in the admin dashboard or sent as a WebSocket frame.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .config import settings
 from .hub import hub
 from .models import (
     ROLE_EDITOR,
     ROLE_HOST,
+    BoardStroke,
+    ChatMessage,
     ROLE_VIEWER,
     STATE_APPROVED,
     STATE_DENIED,
@@ -92,10 +96,230 @@ async def send_snapshot(
     )
 
 
+async def send_side_channels(
+    db: AsyncSession, session: CollabSession, participant_id: int
+) -> None:
+    """Everything that is not files: the chat backlog, the board, the locks."""
+    await hub.send_to_participant(
+        session.public_id,
+        participant_id,
+        {"type": "chat_history", "messages": await chat_history(db, session)},
+    )
+    await hub.send_to_participant(
+        session.public_id,
+        participant_id,
+        {"type": "board", "strokes": await board_strokes(db, session)},
+    )
+    await hub.send_to_participant(
+        session.public_id,
+        participant_id,
+        {"type": "file_locks", "locks": hub.file_locks(session.public_id)},
+    )
+
+
 async def broadcast_snapshot(db: AsyncSession, session: CollabSession) -> None:
     for conn in hub.connections(session.public_id):
         if conn.approved:
             await send_snapshot(db, session, conn.participant_id)
+
+
+# --------------------------------------------------------------------------
+# Chat
+# --------------------------------------------------------------------------
+
+
+async def chat_history(db: AsyncSession, session: CollabSession) -> list[dict[str, Any]]:
+    rows = (
+        await db.scalars(
+            select(ChatMessage)
+            .where(ChatMessage.session_id == session.id)
+            .order_by(ChatMessage.id.desc())
+            .limit(settings.max_chat_history)
+        )
+    ).all()
+    return [
+        {
+            "participant_id": row.participant_id,
+            "display_name": row.display_name,
+            "text": row.text,
+            "at": row.created_at.isoformat(),
+        }
+        for row in reversed(rows)
+    ]
+
+
+async def _trim(db: AsyncSession, model, session_id: int, keep: int) -> None:
+    """Drop the oldest rows once a session has accumulated too many.
+
+    A long session should not grow without bound, and nobody scrolls back
+    that far anyway.
+    """
+    total = int(
+        await db.scalar(
+            select(func.count(model.id)).where(model.session_id == session_id)
+        )
+        or 0
+    )
+    if total <= keep:
+        return
+    cutoff = await db.scalar(
+        select(model.id)
+        .where(model.session_id == session_id)
+        .order_by(model.id.desc())
+        .offset(keep)
+        .limit(1)
+    )
+    if cutoff:
+        await db.execute(
+            delete(model).where(model.session_id == session_id, model.id <= cutoff)
+        )
+
+
+async def record_chat(
+    db: AsyncSession, session: CollabSession, participant: Participant, text: str
+) -> dict[str, Any] | None:
+    clean = text.strip()[: settings.max_chat_length]
+    if not clean:
+        return None
+
+    row = ChatMessage(
+        session_id=session.id,
+        participant_id=participant.id,
+        display_name=participant.display_name,
+        text=clean,
+    )
+    db.add(row)
+    touch(session)
+    await db.flush()
+    await _trim(db, ChatMessage, session.id, settings.max_chat_history)
+
+    return {
+        "type": "chat",
+        "participant_id": participant.id,
+        "display_name": participant.display_name,
+        "text": clean,
+        "at": row.created_at.isoformat(),
+    }
+
+
+# --------------------------------------------------------------------------
+# The shared board
+# --------------------------------------------------------------------------
+
+
+async def board_strokes(db: AsyncSession, session: CollabSession) -> list[dict[str, Any]]:
+    rows = (
+        await db.scalars(
+            select(BoardStroke)
+            .where(BoardStroke.session_id == session.id)
+            .order_by(BoardStroke.id)
+            .limit(settings.max_board_strokes)
+        )
+    ).all()
+    out = []
+    for row in rows:
+        try:
+            points = json.loads(row.points)
+        except (TypeError, ValueError):
+            continue
+        out.append(
+            {
+                "id": row.id,
+                "participant_id": row.participant_id,
+                "color": row.color,
+                "width": row.width,
+                "tool": row.tool,
+                "points": points,
+            }
+        )
+    return out
+
+
+async def record_stroke(
+    db: AsyncSession,
+    session: CollabSession,
+    participant: Participant,
+    stroke: dict[str, Any],
+) -> dict[str, Any] | None:
+    points = stroke.get("points")
+    if not isinstance(points, list) or not points:
+        return None
+
+    # Board coordinates are fractions of the canvas, so a drawing lands in the
+    # same place whatever size the panel happens to be on someone else's
+    # screen.
+    cleaned: list[list[float]] = []
+    for point in points[: settings.max_stroke_points]:
+        if not isinstance(point, (list, tuple)) or len(point) != 2:
+            continue
+        try:
+            x, y = float(point[0]), float(point[1])
+        except (TypeError, ValueError):
+            continue
+        cleaned.append([min(max(x, 0.0), 1.0), min(max(y, 0.0), 1.0)])
+    if not cleaned:
+        return None
+
+    color = str(stroke.get("color") or "#1ABCFE")[:9]
+    tool = "eraser" if stroke.get("tool") == "eraser" else "pen"
+    try:
+        width = int(stroke.get("width") or 3)
+    except (TypeError, ValueError):
+        width = 3
+    width = min(max(width, 1), 60)
+
+    row = BoardStroke(
+        session_id=session.id,
+        participant_id=participant.id,
+        color=color,
+        width=width,
+        tool=tool,
+        points=json.dumps(cleaned),
+    )
+    db.add(row)
+    touch(session)
+    await db.flush()
+    await _trim(db, BoardStroke, session.id, settings.max_board_strokes)
+
+    return {
+        "type": "draw",
+        "stroke": {
+            "id": row.id,
+            "participant_id": participant.id,
+            "color": color,
+            "width": width,
+            "tool": tool,
+            "points": cleaned,
+        },
+    }
+
+
+async def clear_board(
+    db: AsyncSession,
+    session: CollabSession,
+    participant: Participant,
+    scope: str,
+) -> dict[str, Any]:
+    """Scope "mine" removes your own strokes; "all" is the host clearing up."""
+    query = delete(BoardStroke).where(BoardStroke.session_id == session.id)
+    if scope != "all" or participant.role != ROLE_HOST:
+        scope = "mine"
+        query = query.where(BoardStroke.participant_id == participant.id)
+    await db.execute(query)
+    touch(session)
+    return {
+        "type": "board_cleared",
+        "scope": scope,
+        "participant_id": participant.id,
+        "by": participant.display_name,
+    }
+
+
+async def broadcast_locks(session: CollabSession) -> None:
+    await hub.broadcast(
+        session.public_id,
+        {"type": "file_locks", "locks": hub.file_locks(session.public_id)},
+    )
 
 
 async def approve_participant(
@@ -144,6 +368,7 @@ async def approve_participant(
         },
     )
     await send_snapshot(db, session, participant.id)
+    await send_side_channels(db, session, participant.id)
     await hub.broadcast(
         session.public_id,
         {"type": "participant_joined", "participant": participant_payload(participant)},

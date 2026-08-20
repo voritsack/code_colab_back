@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -52,6 +53,8 @@ class Hub:
     def __init__(self) -> None:
         self._rooms: dict[str, dict[int, Connection]] = {}
         self._status: dict[str, str] = {}
+        # room -> path -> (participant_id, expires at monotonic seconds)
+        self._file_locks: dict[str, dict[str, tuple[int, float]]] = {}
         self._lock = asyncio.Lock()
 
     # -- room status cache -----------------------------------------------
@@ -67,6 +70,68 @@ class Hub:
 
     def forget_room_status(self, session_public_id: str) -> None:
         self._status.pop(session_public_id, None)
+
+    # -- soft file locks -------------------------------------------------
+    #
+    # Sync is whole-file, so two people typing in one file would overwrite
+    # each other silently. Whoever types first holds the file for a few
+    # seconds; everyone else is told who has it instead of losing their work.
+
+    def claim_file(
+        self, session_public_id: str, path: str, participant_id: int, ttl: float
+    ) -> int | None:
+        """Take or renew the lock. Returns the holder if it is someone else."""
+        now = time.monotonic()
+        room = self._file_locks.setdefault(session_public_id, {})
+
+        holder = room.get(path)
+        if holder is not None and holder[0] != participant_id and holder[1] > now:
+            return holder[0]
+
+        room[path] = (participant_id, now + ttl)
+        return None
+
+    def release_other_files(
+        self, session_public_id: str, participant_id: int, keep: str | None
+    ) -> list[str]:
+        """Free every file this person holds except the one they are in now.
+
+        Without this a lock outlives the reason for it: you type one line,
+        move to another file, and nobody can touch the first one until the
+        lease runs out.
+        """
+        room = self._file_locks.get(session_public_id)
+        if not room:
+            return []
+        freed = [
+            path
+            for path, (owner, _) in room.items()
+            if owner == participant_id and path != keep
+        ]
+        for path in freed:
+            del room[path]
+        return freed
+
+    def release_files(self, session_public_id: str, participant_id: int) -> list[str]:
+        """Drop every lock held by someone, e.g. when they disconnect."""
+        room = self._file_locks.get(session_public_id)
+        if not room:
+            return []
+        freed = [path for path, (owner, _) in room.items() if owner == participant_id]
+        for path in freed:
+            del room[path]
+        return freed
+
+    def file_locks(self, session_public_id: str) -> dict[str, int]:
+        """Currently held locks, expired ones pruned."""
+        now = time.monotonic()
+        room = self._file_locks.get(session_public_id, {})
+        for path in [p for p, (_, expires) in room.items() if expires <= now]:
+            del room[path]
+        return {path: owner for path, (owner, _) in room.items()}
+
+    def forget_locks(self, session_public_id: str) -> None:
+        self._file_locks.pop(session_public_id, None)
 
     # -- registry --------------------------------------------------------
 

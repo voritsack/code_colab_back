@@ -5,13 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{% block title %}{{ settings.app_name }}{% endblock %}</title>
     <link rel="stylesheet" href="/static/app.css" />
-    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/static/favicon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
   </head>
   <body>
     {% block chrome %}
     <header class="topbar">
       <a class="brand" href="/admin">
-        <span class="brand-dot"></span>
+        <img class="brand-logo" src="/static/logo.png" alt="" width="22" height="22" />
         {{ settings.app_name }}
       </a>
       {% if admin %}

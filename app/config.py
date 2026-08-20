@@ -107,12 +107,35 @@ class Settings(BaseSettings):
     max_participants: int = 25
     session_idle_timeout_minutes: int = 240
 
+    # Housekeeping, run in the background rather than by hand. Ended sessions
+    # keep the files that were shared into them, so they should not live
+    # forever; 0 disables the purge.
+    # Two stages, because the two things cost differently. A finished
+    # session's contents are the bulk of the storage and nobody needs them
+    # once everyone has their copy, so they go first. The session row itself
+    # is a few hundred bytes and is what the dashboard reports on, so it
+    # lingers. 0 disables either stage.
+    artefact_retention_hours: int = 6
+    retention_days: int = 30
+    sweep_interval_minutes: int = 60
+
     # -- Payload limits --------------------------------------------------
     max_file_bytes: int = 512_000
     max_files_per_snapshot: int = 2_000
     max_snapshot_bytes: int = 25_000_000
     max_ws_message_bytes: int = 2_000_000
     max_path_length: int = 400
+
+    # -- Chat and the shared board ---------------------------------------
+    max_chat_length: int = 2000
+    max_chat_history: int = 300
+    max_board_strokes: int = 4000
+    max_stroke_points: int = 600
+
+    # How long one person keeps a file to themselves after typing in it.
+    # Long enough to cover a pause for thought, short enough that stepping
+    # away does not block anyone.
+    file_lock_seconds: int = 12
 
     # -- Rate limits (requests per window) -------------------------------
     login_rate_limit: int = 10

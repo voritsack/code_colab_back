@@ -15,6 +15,7 @@ Requires httpx and websockets:
 import asyncio
 import json
 import os
+from datetime import timedelta
 import secrets
 import sys
 from pathlib import Path
@@ -288,6 +289,68 @@ async def main():
             r = await ac.get("/admin/users")
             check("only admins are listed",
                   r.status_code == 200 and "Administrators" in r.text and "Ada Host" not in r.text)
+
+    # ---- housekeeping ----------------------------------------------------
+    # An ended session should not keep its files around; the sweeper is what
+    # normally does this, driven here directly so the test is not left
+    # waiting an hour for the interval.
+    import importlib
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    try:
+        app_main = importlib.import_module("app.main")
+        app_config = importlib.import_module("app.config")
+        app_db = importlib.import_module("app.db")
+        app_models = importlib.import_module("app.models")
+        from sqlalchemy import func, select
+    except Exception as exc:  # pragma: no cover - only when run from elsewhere
+        print(f"[SKIP] sweeper - could not import the app ({exc})")
+    else:
+        settings = app_config.settings
+        async with app_db.SessionLocal() as db:
+            row = await db.scalar(
+                select(app_models.CollabSession).where(
+                    app_models.CollabSession.public_id == pid
+                )
+            )
+            if row is None:
+                print("[SKIP] sweeper - the session was already purged")
+            else:
+                before = int(
+                    await db.scalar(
+                        select(func.count(app_models.SessionFile.id)).where(
+                            app_models.SessionFile.session_id == row.id
+                        )
+                    )
+                    or 0
+                )
+                check("sweeper: an ended session still has its files", before > 0, str(before))
+
+                # Backdate it past the artefact window.
+                row.last_activity_at = app_models.utcnow() - timedelta(
+                    hours=settings.artefact_retention_hours + 1
+                )
+                await db.commit()
+
+        await app_main.sweep_once()
+
+        async with app_db.SessionLocal() as db:
+            row = await db.scalar(
+                select(app_models.CollabSession).where(
+                    app_models.CollabSession.public_id == pid
+                )
+            )
+            after = int(
+                await db.scalar(
+                    select(func.count(app_models.SessionFile.id)).where(
+                        app_models.SessionFile.session_id == row.id
+                    )
+                )
+                or 0
+            )
+            check("sweeper: files cleared once it goes quiet", after == 0, str(after))
+            check("sweeper: the session record survives for the dashboard", row is not None)
+        await app_db.engine.dispose()
 
     print()
     if FAILS:

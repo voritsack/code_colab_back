@@ -166,6 +166,50 @@ class SessionFile(Base):
     session: Mapped[CollabSession] = relationship(back_populates="files")
 
 
+class ChatMessage(Base):
+    """Session chat. Kept so somebody admitted late can read what they missed."""
+
+    __tablename__ = "chat_messages"
+    __table_args__ = (Index("ix_chat_session_created", "session_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), index=True
+    )
+    participant_id: Mapped[int | None] = mapped_column(
+        ForeignKey("participants.id", ondelete="SET NULL"), nullable=True
+    )
+    display_name: Mapped[str] = mapped_column(String(120))
+    text: Mapped[str] = mapped_column(String(2000))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class BoardStroke(Base):
+    """One pen stroke on the shared board.
+
+    Stored rather than kept in memory so the board is still there for someone
+    admitted halfway through, and survives a server restart.
+    """
+
+    __tablename__ = "board_strokes"
+    __table_args__ = (Index("ix_stroke_session_id", "session_id", "id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), index=True
+    )
+    participant_id: Mapped[int | None] = mapped_column(
+        ForeignKey("participants.id", ondelete="SET NULL"), nullable=True
+    )
+    color: Mapped[str] = mapped_column(String(9), default="#1ABCFE")
+    width: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    tool: Mapped[str] = mapped_column(String(10), default="pen")
+    # A JSON array of [x, y] pairs in board coordinates (0..1 of the canvas),
+    # so the drawing lands in the same place whatever size the panel is.
+    points: Mapped[str] = mapped_column(FileText, default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
 class ActivityEvent(Base):
     """Append-only feed powering the admin dashboard."""
 

@@ -23,11 +23,16 @@ from ..actions import (
     CLOSE_SESSION_ENDED,
     apply_file_update,
     approve_participant,
+    broadcast_locks,
     broadcast_roster,
     change_role,
+    clear_board,
     delete_file,
     deny_participant,
+    record_chat,
+    record_stroke,
     remove_participant,
+    send_side_channels,
     send_snapshot,
     set_status,
 )
@@ -212,6 +217,7 @@ async def _greet(
         )
     else:
         await send_snapshot(db, session, participant.id)
+        await send_side_channels(db, session, participant.id)
         await hub.broadcast(
             session.public_id,
             {
@@ -232,6 +238,11 @@ async def _farewell(
 ) -> None:
     await hub.unregister(conn)
 
+    # Whatever files they were holding are free again the moment they leave;
+    # otherwise a dropped connection would block a file for its full lease.
+    if hub.release_files(session.public_id, conn.participant_id):
+        await broadcast_locks(session)
+
     participant = await db.get(Participant, conn.participant_id)
     if participant is not None:
         participant.connected = False
@@ -250,6 +261,7 @@ async def _farewell(
 
     if not hub.connections(session.public_id):
         hub.forget_room_status(session.public_id)
+        hub.forget_locks(session.public_id)
 
 
 async def _pump(db: AsyncSession, conn: Connection, session: CollabSession) -> None:
@@ -330,6 +342,18 @@ async def _dispatch(
         await _edit(db, conn, session, kind, message)
         return
 
+    if kind == "chat":
+        await _chat(db, conn, session, message)
+        return
+
+    if kind in ("draw", "board_clear"):
+        await _board(db, conn, session, kind, message)
+        return
+
+    if kind == "request_edit":
+        await _request_edit(db, conn, session)
+        return
+
     await hub.send(
         conn, {"type": "error", "code": "unknown_type", "message": f"Unknown type {kind}"}
     )
@@ -337,6 +361,30 @@ async def _dispatch(
 
 async def _deny(conn: Connection, message: str) -> None:
     await hub.send(conn, {"type": "error", "code": "forbidden", "message": message})
+
+
+# A document longer than this is not something we need to draw a cursor in,
+# and the bound keeps a hostile peer from sending absurd coordinates.
+MAX_POSITION = 5_000_000
+
+
+def _clean_position(value: Any) -> int | None:
+    if not isinstance(value, int) or isinstance(value, bool):
+        return None
+    if value < 0 or value > MAX_POSITION:
+        return None
+    return value
+
+
+def _clean_selection(value: Any) -> dict[str, int] | None:
+    """Normalise a peer's selection range, or drop it."""
+    if not isinstance(value, dict):
+        return None
+    keys = ("start_line", "start_column", "end_line", "end_column")
+    cleaned = {key: _clean_position(value.get(key)) for key in keys}
+    if any(item is None for item in cleaned.values()):
+        return None
+    return cleaned
 
 
 async def _presence(
@@ -353,7 +401,16 @@ async def _presence(
         except UnsafePathError:
             return
 
+    # Moving to another file gives up the hold on the one you left.
+    if hub.release_other_files(session.public_id, conn.participant_id, path):
+        await broadcast_locks(session)
+
     conn.active_file = path
+    # A peer's cursor and selection are drawn in everyone else's editor, so
+    # they have to be relayed - but they arrive from the network, so clamp
+    # them to plausible integers rather than passing them through untouched.
+    selection = _clean_selection(message.get("selection"))
+
     participant = await db.get(Participant, conn.participant_id)
     if participant is not None:
         participant.active_file = path
@@ -367,8 +424,9 @@ async def _presence(
             "participant_id": conn.participant_id,
             "display_name": conn.display_name,
             "path": path,
-            "line": message.get("line"),
-            "column": message.get("column"),
+            "line": _clean_position(message.get("line")),
+            "column": _clean_position(message.get("column")),
+            "selection": selection,
         },
         exclude_participant=conn.participant_id,
     )
@@ -404,6 +462,29 @@ async def _edit(
         )
         return
 
+    if kind == "file_update":
+        # Sync replaces the whole file, so two people in one file would
+        # overwrite each other silently. First one in holds it briefly.
+        previous = hub.file_locks(session.public_id).get(path)
+        holder = hub.claim_file(
+            session.public_id, path, conn.participant_id, settings.file_lock_seconds
+        )
+        if holder is not None:
+            owner = hub.get(session.public_id, holder)
+            await hub.send(
+                conn,
+                {
+                    "type": "error",
+                    "code": "locked",
+                    "path": path,
+                    "message": (owner.display_name if owner else "Someone else")
+                    + " is editing this file",
+                },
+            )
+            return
+        if previous != conn.participant_id:
+            await broadcast_locks(session)
+
     participant = await db.get(Participant, conn.participant_id)
     if participant is None:
         return
@@ -436,6 +517,93 @@ async def _edit(
     await db.commit()
     await hub.broadcast(
         session.public_id, frame, exclude_participant=conn.participant_id
+    )
+
+
+async def _chat(
+    db: AsyncSession,
+    conn: Connection,
+    session: CollabSession,
+    message: dict[str, Any],
+) -> None:
+    text = message.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return
+
+    participant = await db.get(Participant, conn.participant_id)
+    if participant is None:
+        return
+
+    frame = await record_chat(db, session, participant, text)
+    if frame is None:
+        return
+    await db.commit()
+    # Echoed to the sender too, so everyone sees the same ordering the
+    # server settled on rather than their own optimistic guess.
+    await hub.broadcast(session.public_id, frame)
+
+
+async def _board(
+    db: AsyncSession,
+    conn: Connection,
+    session: CollabSession,
+    kind: str,
+    message: dict[str, Any],
+) -> None:
+    """The shared drawing board.
+
+    Deliberately not gated on the editor role: someone in view-only mode
+    still needs to be able to circle the line they are asking about.
+    """
+    if hub.room_status(session.public_id, STATUS_ACTIVE) == STATUS_PAUSED:
+        await hub.send(
+            conn,
+            {"type": "error", "code": "paused", "message": "The session is paused"},
+        )
+        return
+
+    participant = await db.get(Participant, conn.participant_id)
+    if participant is None:
+        return
+
+    if kind == "board_clear":
+        scope = "all" if message.get("scope") == "all" else "mine"
+        frame = await clear_board(db, session, participant, scope)
+        await db.commit()
+        await hub.broadcast(session.public_id, frame)
+        return
+
+    stroke = message.get("stroke")
+    if not isinstance(stroke, dict):
+        return
+    frame = await record_stroke(db, session, participant, stroke)
+    if frame is None:
+        return
+    await db.commit()
+    await hub.broadcast(
+        session.public_id, frame, exclude_participant=conn.participant_id
+    )
+
+
+async def _request_edit(
+    db: AsyncSession, conn: Connection, session: CollabSession
+) -> None:
+    """A viewer asking to be promoted, so the host does not have to notice."""
+    if conn.role in (ROLE_HOST, ROLE_EDITOR):
+        return
+    await hub.notify_hosts(
+        session.public_id,
+        {
+            "type": "edit_request",
+            "participant": {
+                "participant_id": conn.participant_id,
+                "display_name": conn.display_name,
+            },
+        },
+    )
+    await hub.send(
+        conn,
+        {"type": "edit_requested", "message": "Asked the host for editing access"},
     )
 
 

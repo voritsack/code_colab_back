@@ -6,7 +6,7 @@
 
 {% block chrome %}
 <header class="topbar">
-  <a class="brand" href="/"><span class="brand-dot"></span>{{ settings.app_name }}</a>
+  <a class="brand" href="/"><img class="brand-logo" src="/static/logo.png" alt="" width="22" height="22" />{{ settings.app_name }}</a>
 </header>
 {% endblock %}
 
@@ -14,6 +14,7 @@
 <div class="join-shell">
   {% if session %}
   <article class="card join-card" data-deep-link="{{ deep_link }}" data-code="{{ code }}">
+    <img class="join-logo" src="/static/logo.png" alt="" width="56" height="56" />
     <p class="eyebrow">You have been invited to a live coding session</p>
     <h1>{{ session.title }}</h1>
     <p class="muted">
@@ -39,7 +40,12 @@
     </div>
 
     <ol class="steps">
-      <li>Install the <strong>{{ settings.app_name }}</strong> extension in VS Code.</li>
+      <li>
+        <a href="/download/extension">Download the
+          <strong>{{ settings.app_name }}</strong> extension</a>, then in VS Code
+        open the Extensions view, click the <em>...</em> menu and choose
+        <em>Install from VSIX</em>. It keeps itself up to date after that.
+      </li>
       <li>Open the folder you want to work in (or an empty one to receive the host's files).</li>
       <li>
         Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> and run

@@ -87,13 +87,16 @@ p { margin: 0 0 10px; }
   color: var(--text);
 }
 .brand:hover { text-decoration: none; }
-.brand-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+.brand-logo {
+  display: block;
+  border-radius: 5px;
 }
+.join-logo {
+  display: block;
+  margin: 0 0 14px;
+  border-radius: 12px;
+}
+.auth-head .join-logo { margin: 0 auto 10px; }
 .topnav { display: flex; gap: 16px; margin-right: auto; }
 .topnav a { color: var(--text-dim); font-weight: 500; }
 .topnav a.active { color: var(--text); }
@@ -369,7 +372,7 @@ a.btn:hover { text-decoration: none; }
 .auth-card { width: 100%; max-width: 360px; padding: 26px; }
 .auth-head { text-align: center; margin-bottom: 20px; }
 .auth-head h1 { font-size: 1.25rem; margin: 10px 0 2px; }
-.auth-head .brand-dot { display: inline-block; }
+.auth-head .join-logo { display: block; }
 
 .join-card { width: 100%; max-width: 520px; padding: 28px; }
 .eyebrow {

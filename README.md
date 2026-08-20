@@ -25,6 +25,22 @@ Companion extension: <https://github.com/voritsack/code_colab_extention>
 - **Pause / resume** — the host can freeze the session. Nothing propagates or
   is stored while paused; resuming pushes a fresh snapshot so everyone
   resynchronises.
+- **Presence** — every participant has a colour derived from their id, so
+  their cursor, selection and gutter dot look the same in everyone's editor
+  without anything being synchronised.
+- **Chat and a shared drawing board**, both stored per session so somebody
+  admitted halfway through still sees what happened. The board is open to
+  view-only participants too: they still need to be able to circle the line
+  they are asking about.
+- **Soft file locks** — sync replaces whole files, so whoever types first
+  holds that file for a few seconds and everyone else is told who has it
+  rather than losing their work. The hold is dropped as soon as they move to
+  another file.
+- **Extension hosting** — the server hands out the `.vsix` and a version
+  manifest, so the extension can keep itself current.
+- **Housekeeping** — idle sessions are ended automatically, a finished
+  session's files, drawings and chat are deleted a few hours later, and the
+  record itself is purged after the retention window.
 - **Admin dashboard** — server-rendered pages at `/admin` showing live
   sessions, who is connected, which file each person has open, edit counts and
   an activity feed.
@@ -154,6 +170,17 @@ Percent-encode `: / ? # [ ] @ + ^ !` if they appear in a database password.
 | GET | `/{public_id}/files` | **session** | Resync snapshot. |
 | POST | `/join` | access *or* none | Body `{code, display_name?}`. Returns a session token. |
 | GET | `/by-code/{code}` | none | Public preview for the join page. |
+
+### Extension distribution
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| GET | `/api/extension/latest` | Version, download URL and sha256 of the published build. |
+| GET | `/download/extension` | The `.vsix` itself. Linked from the join page. |
+
+Publish a build with `python scripts/publish_extension.py <file.vsix>` and
+commit `app/static/downloads/` — the deployment folder is rebuilt from git
+on every start.
 | POST | `/{public_id}/participants/{id}/approve` `…/deny` `…/remove` | access (host) | |
 | PATCH | `/{public_id}/participants/{id}/role` | access (host) | `editor` or `viewer`. |
 
@@ -254,10 +281,18 @@ touch. Rows are removed in dependency order rather than relying on
 `ON DELETE CASCADE`, so the outcome does not depend on how the schema was
 created.
 
+A background sweep runs every `SWEEP_INTERVAL_MINUTES` and does three things:
+ends sessions idle beyond `SESSION_IDLE_TIMEOUT_MINUTES`, deletes the files,
+drawings and chat of sessions that finished more than
+`ARTEFACT_RETENTION_HOURS` ago, and purges session records older than
+`RETENTION_DAYS`. The two-stage split is deliberate — a shared workspace can
+be tens of megabytes and is dead weight the moment the session ends, while
+the session row is a few hundred bytes and is what the dashboard reports on.
+
 The server also reconciles itself on boot: the hub only exists in memory, so
 after a restart it clears every stale `connected` flag and ends sessions idle
-beyond `SESSION_IDLE_TIMEOUT_MINUTES`. Without that, a host who closes their
-laptop leaves a session sitting on the dashboard as live for good.
+beyond the timeout. Without that, a host who closes their laptop leaves a
+session sitting on the dashboard as live for good.
 
 ## Layout
 
