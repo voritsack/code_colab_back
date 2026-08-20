@@ -225,6 +225,9 @@ async def _greet(
         )
 
     await broadcast_roster(db, session)
+    # Close the read transaction: an idle socket should hold no database
+    # connection, and the next frame must not read a stale snapshot.
+    await db.commit()
 
 
 async def _farewell(
@@ -286,7 +289,13 @@ async def _pump(db: AsyncSession, conn: Connection, session: CollabSession) -> N
             continue
 
         conn.last_seen_at = utcnow()
-        await _dispatch(db, conn, session, message)
+        try:
+            await _dispatch(db, conn, session, message)
+        finally:
+            # One transaction per frame. Without this the connection would
+            # keep the snapshot it opened with and stop seeing other
+            # participants' commits.
+            await db.commit()
 
 
 async def _dispatch(

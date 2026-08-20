@@ -76,7 +76,8 @@ class Settings(BaseSettings):
     login_rate_window_seconds: int = 300
     join_rate_limit: int = 20
     join_rate_window_seconds: int = 300
-    register_rate_limit: int = 5
+    # Generous on purpose: a class signing up together shares one NAT address.
+    register_rate_limit: int = 20
     register_rate_window_seconds: int = 3600
     ws_message_rate_limit: int = 240
     ws_message_rate_window_seconds: int = 10
