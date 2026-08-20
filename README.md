@@ -81,6 +81,32 @@ Then:
 
 A push to the deployed branch restarts the container on the new commit.
 
+#### The proxy in front must forward WebSocket upgrades
+
+This is the one deployment mistake that leaves the site looking healthy while
+the product does not work at all. The join page renders, the admin dashboard
+loads, `/healthz` returns 200 — and every session silently fails, because
+collaboration is the socket.
+
+Check it from anywhere:
+
+```bash
+curl -s -D - -o /dev/null   -H "Connection: Upgrade" -H "Upgrade: websocket"   -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=="   https://your-domain/ws/session/x
+```
+
+`101 Switching Protocols` is correct. A `404` means something in front dropped
+the `Upgrade` and `Connection` headers, so the request arrived as a plain GET
+and no HTTP route matched it.
+
+- **Cloudflare**: Network -> WebSockets must be on.
+- **nginx**: the location block needs `proxy_http_version 1.1;`,
+  `proxy_set_header Upgrade $http_upgrade;` and
+  `proxy_set_header Connection "upgrade";`
+- **Panels with a proxy toggle**: enable WebSocket support for the port.
+
+`python tests/e2e.py https://your-domain` checks this first and stops with a
+plain explanation if the handshake never reaches the application.
+
 > **Serve it over TLS.** On plain HTTP the admin password, every token and the
 > shared source code all travel in cleartext, and the admin cookie cannot be
 > marked `Secure`. Put a domain and a certificate in front — a Cloudflare
@@ -202,6 +228,25 @@ role changes, pause/resume, ending a session, and the admin dashboard
 including its CSRF check. Admin credentials come from `ADMIN_EMAIL` /
 `ADMIN_PASSWORD` in the environment or `.env`.
 
+## Maintenance
+
+```bash
+python scripts/cleanup.py --stale                 # end sessions nobody has touched
+python scripts/cleanup.py --purge-ended 30 --yes  # drop sessions ended over a month ago
+python scripts/cleanup.py --test-data --yes       # remove every non-admin account
+python scripts/cleanup.py --all --yes             # back to just the admin account
+```
+
+Every run is a dry run until you add `--yes`, and prints exactly what it would
+touch. Rows are removed in dependency order rather than relying on
+`ON DELETE CASCADE`, so the outcome does not depend on how the schema was
+created.
+
+The server also reconciles itself on boot: the hub only exists in memory, so
+after a restart it clears every stale `connected` flag and ends sessions idle
+beyond `SESSION_IDLE_TIMEOUT_MINUTES`. Without that, a host who closes their
+laptop leaves a session sitting on the dashboard as live for good.
+
 ## Layout
 
 ```
@@ -220,6 +265,10 @@ app/
   routers/        auth, sessions, ws, admin, public
   templates/      admin + join pages (Jinja2)
   static/         one stylesheet, two small scripts
+scripts/
+  cleanup.py      stale sessions, purging, test-data removal
+tests/
+  e2e.py          end-to-end checks against a running server
 ```
 
 There are no migrations: `Base.metadata.create_all` runs at startup. Add

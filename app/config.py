@@ -91,6 +91,10 @@ class Settings(BaseSettings):
     admin_email: str | None = None
     admin_password: str | None = None
     admin_name: str = "Administrator"
+    # When true, the admin account's password is reset from ADMIN_PASSWORD on
+    # every start. Off by default so a restart cannot quietly undo a password
+    # somebody changed elsewhere; turn it on for one boot to rotate, then off.
+    admin_reset_password: bool = False
 
     # -- Sessions --------------------------------------------------------
     allow_guests_default: bool = True

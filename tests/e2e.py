@@ -190,13 +190,30 @@ async def main():
     host_hdr = {"Authorization": f"Bearer {host_session_token}"}
     guest_hdr = {"Authorization": f"Bearer {guest_session_token}"}
 
-    # bad token is refused
+    # A junk token must be refused *by the application*, which means the
+    # handshake has to succeed first. A rejected handshake usually means a
+    # reverse proxy in front is not forwarding Upgrade/Connection, which would
+    # break every session while leaving the rest of the site looking healthy.
     try:
-        async with websockets.connect(url, additional_headers={"Authorization": "Bearer junk"}) as bad:
+        async with websockets.connect(
+            url, additional_headers={"Authorization": "Bearer junk"}, open_timeout=15
+        ) as bad:
             await asyncio.wait_for(bad.recv(), timeout=4)
         check("bad ws token refused", False, "connection stayed open")
-    except Exception as exc:
-        check("bad ws token refused", True, type(exc).__name__)
+    except websockets.exceptions.InvalidStatus as exc:
+        code = exc.response.status_code
+        check(
+            "websocket upgrade reaches the app",
+            False,
+            f"handshake rejected with HTTP {code}; the proxy in front of "
+            f"{BASE} is not upgrading websocket connections",
+        )
+        print()
+        print("WebSocket transport is broken at this origin - stopping here.")
+        print("Everything past this point needs a working socket.")
+        sys.exit(1)
+    except websockets.exceptions.ConnectionClosed as exc:
+        check("bad ws token refused", exc.code == 4001, f"closed with {exc.code}")
 
     async with websockets.connect(url, additional_headers=host_hdr) as hws:
         hello = await recv_until(hws, {"hello"})

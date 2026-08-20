@@ -6,17 +6,26 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from datetime import timedelta
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select
+from sqlalchemy import select, update
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
 from .config import settings
-from .db import SessionLocal, init_models
-from .models import User
+from .db import SessionLocal, engine, init_models
+from .models import (
+    STATUS_ENDED,
+    CollabSession,
+    Participant,
+    RefreshToken,
+    User,
+    utcnow,
+)
 from .routers import admin, auth, public, sessions, ws
 from .security import hash_password
 from .templating import STATIC_DIR
@@ -47,17 +56,86 @@ async def bootstrap_admin() -> None:
             )
             await db.commit()
             logger.info("Created admin account %s", email)
-        elif not user.is_admin:
+            return
+
+        changed = False
+        if not user.is_admin:
             user.is_admin = True
-            await db.commit()
+            changed = True
             logger.info("Promoted %s to admin", email)
+
+        if settings.admin_reset_password:
+            user.password_hash = hash_password(settings.admin_password)
+            # A password change ends every session it authorised.
+            await db.execute(
+                update(RefreshToken)
+                .where(
+                    RefreshToken.user_id == user.id,
+                    RefreshToken.revoked_at.is_(None),
+                )
+                .values(revoked_at=utcnow())
+            )
+            changed = True
+            logger.warning(
+                "Reset the password for %s from ADMIN_PASSWORD. Set "
+                "ADMIN_RESET_PASSWORD=false so the next restart leaves it alone.",
+                email,
+            )
+
+        if changed:
+            await db.commit()
+
+
+async def close_orphaned_sessions() -> None:
+    """Reconcile the database with the fact that the process just started.
+
+    The hub only exists in memory, so after a restart nobody is connected -
+    whatever the participant rows say. Sessions idle beyond the timeout are
+    ended outright; the rest keep their status and wait for their host to
+    reconnect.
+    """
+    cutoff = utcnow() - timedelta(minutes=settings.session_idle_timeout_minutes)
+    async with SessionLocal() as db:
+        marked = await db.execute(
+            update(Participant)
+            .where(Participant.connected.is_(True))
+            .values(connected=False)
+        )
+
+        stale = (
+            await db.scalars(
+                select(CollabSession).where(
+                    CollabSession.status != STATUS_ENDED,
+                    CollabSession.last_activity_at < cutoff,
+                )
+            )
+        ).all()
+        now = utcnow()
+        for session in stale:
+            session.status = STATUS_ENDED
+            session.ended_at = now
+
+        await db.commit()
+
+        if marked.rowcount or stale:
+            logger.info(
+                "Startup sweep: cleared %s stale connection(s), ended %s idle session(s)",
+                marked.rowcount or 0,
+                len(stale),
+            )
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await init_models()
     await bootstrap_admin()
-    yield
+    await close_orphaned_sessions()
+    try:
+        yield
+    finally:
+        # Close pooled connections on the way out, so the driver is not left
+        # tidying up sockets after the event loop has gone.
+        await engine.dispose()
 
 
 def create_app() -> FastAPI:
