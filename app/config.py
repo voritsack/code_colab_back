@@ -154,7 +154,7 @@ class Settings(BaseSettings):
 
     # -- VS Code deep link ----------------------------------------------
     # <publisher>.<name> from the extension's package.json.
-    vscode_extension_id: str = "local.codecolab"
+    vscode_extension_id: str = "voritsack.codecolab"
     vscode_marketplace_url: str = ""
 
     @field_validator("public_base_url")

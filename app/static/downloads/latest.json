@@ -1,7 +1,7 @@
 {
-  "version": "2.1.0",
-  "file": "codecolab-2.1.0.vsix",
-  "sha256": "1b06f0b62a41e83345390efc00299158b235a7e8915cb56e612e7a98a839b0e0",
-  "notes": "Avatars and live cursors, follow mode, shared board, chat, file locks, sessions that survive a reload.",
-  "published_at": "2026-08-20T19:13:30+00:00"
+  "version": "2.2.0",
+  "file": "codecolab-2.2.0.vsix",
+  "sha256": "b9bc42dd7d8263c30b25a91ad8ad92d3aeab7acd5db2331fd0f8b218b2c208e7",
+  "notes": "Marketplace release: avatars, live cursors, follow mode, shared board, chat, file locks.",
+  "published_at": "2026-08-20T19:29:30+00:00"
 }
