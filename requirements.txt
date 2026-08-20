@@ -5,12 +5,18 @@ pydantic-settings>=2.3.0
 email-validator>=2.1.0
 SQLAlchemy>=2.0.30
 greenlet>=3.0.0
-aiosqlite>=0.20.0
 PyJWT>=2.8.0
 bcrypt>=4.1.0
 Jinja2>=3.1.4
 python-multipart>=0.0.9
 
-# Optional database drivers - install the one matching DATABASE_URL
+# Database drivers. aiomysql matches the default DATABASE_URL
+# (mysql+aiomysql://). cryptography is what lets it speak the sha256 auth
+# plugins some MySQL 8 servers insist on; without it you get an opaque
+# "Authentication plugin is not supported" at boot.
+aiomysql>=0.2.0
+cryptography>=42.0.0
+
+# Swap in whichever matches your DATABASE_URL instead:
+aiosqlite>=0.20.0        # sqlite+aiosqlite:///./codecolab.db
 # asyncpg>=0.29.0        # postgresql+asyncpg://...
-# aiomysql>=0.2.0        # mysql+aiomysql://...

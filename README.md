@@ -30,21 +30,63 @@ Companion extension: <https://github.com/voritsack/code_colab_extention>
 ## Running it
 
 ```bash
-cd BACK
 python -m venv .venv && .venv/Scripts/activate     # Linux/macOS: source .venv/bin/activate
 pip install -r requirements.txt
 
-cp .env.example .env        # then edit it - see below
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+cp .env.example .env        # then edit it, see below
+python main.py
 ```
+
+`main.py` is the entry point: it reads the port from `SERVER_PORT` (or `PORT`,
+or `.env`), binds `HOST`, and starts one uvicorn worker. For development with
+reload, `python -m uvicorn app.main:app --reload --port 8000` still works.
 
 Tables are created on first boot, and the account in `ADMIN_EMAIL` /
 `ADMIN_PASSWORD` is created (or promoted) so `/admin` is reachable immediately.
 
-**Run a single worker.** The WebSocket hub is in-process, so two workers would
-put participants of the same session in different rooms. To scale past one
-process, replace `app/hub.py` with a Redis pub/sub backend — nothing else has
-to change.
+**One worker, always.** The WebSocket hub lives in this process's memory, so
+two workers would scatter the participants of one session across processes
+that cannot see each other. To scale past one process, replace `app/hub.py`
+with a Redis pub/sub backend — nothing else has to change.
+
+### Deploying to a hosting panel
+
+Panels that fetch the repository into a container and run one named file need
+three things:
+
+| Panel field | Value |
+| --- | --- |
+| Entry file | `main.py` |
+| Port | whatever the panel assigned; it exports `SERVER_PORT` and `main.py` reads it |
+| Dependencies | `requirements.txt`, installed automatically |
+
+Then:
+
+1. **Upload `.env`** through the panel's file manager, next to `main.py`. It is
+   not in the repository and the fetch will not create it. If the panel wipes
+   the folder on restart, set the same names as environment variables instead
+   — real environment variables always win over the file. Without `SECRET_KEY`
+   and `DATABASE_URL` the server refuses to start and says why.
+2. **Set `PUBLIC_BASE_URL`** to the address people will actually open, port
+   included (`http://203.0.113.10:25589`). Every invite link is built from it,
+   so a wrong value produces links that go nowhere.
+3. **Leave `HOST=0.0.0.0`.** Binding a loopback address inside a container
+   means nothing outside can reach it.
+4. **Set `TRUSTED_HOSTS`** to the host or IP you serve from. Ports are ignored
+   in the comparison.
+5. **Leave `TRUST_PROXY_HEADERS=false`** unless a reverse proxy terminates the
+   connection in front of the server. On a directly exposed port,
+   `X-Forwarded-For` is attacker controlled, and honouring it hands anyone a
+   fresh rate-limit bucket per request.
+
+A push to the deployed branch restarts the container on the new commit.
+
+> **Serve it over TLS.** On plain HTTP the admin password, every token and the
+> shared source code all travel in cleartext, and the admin cookie cannot be
+> marked `Secure`. Put a domain and a certificate in front — a Cloudflare
+> Tunnel or an nginx/Caddy reverse proxy both work — then set
+> `PUBLIC_BASE_URL=https://...` and `TRUST_PROXY_HEADERS=true`. The server logs
+> a warning at boot until you do.
 
 ### Configuration
 
@@ -58,6 +100,10 @@ The ones you must set:
 | `PUBLIC_BASE_URL` | The origin invited people will open. `127.0.0.1` only works if everyone is on your machine. |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Dashboard sign-in. |
 | `VSCODE_EXTENSION_ID` | `<publisher>.<name>` from the extension, used to build `vscode://` links. |
+| `HOST` | `0.0.0.0` in a container, `127.0.0.1` on a laptop. |
+| `SERVER_PORT` / `PORT` | Usually injected by the host. Falls back to `PORT` in `.env`, then 8000. |
+| `TRUSTED_HOSTS` | Hostnames or IPs this server answers for. Empty disables the check. |
+| `TRUST_PROXY_HEADERS` | `true` only behind a reverse proxy. |
 
 Percent-encode `: / ? # [ ] @ + ^ !` if they appear in a database password.
 
@@ -135,8 +181,10 @@ Close codes: `4001` unauthorised, `4002` bad message, `4003` denied,
 - CORS is **off** by default. The extension is not a browser and sends no
   `Origin`; only add origins if you build a web client.
 
-Behind a reverse proxy, run uvicorn with `--proxy-headers` and make sure the
-proxy strips inbound `X-Forwarded-For` — the rate limiter trusts it.
+Behind a reverse proxy, set `TRUST_PROXY_HEADERS=true` and make sure the proxy
+overwrites inbound `X-Forwarded-For`. Left at `false` the rate limiter uses the
+socket address and ignores the header entirely, which is the right behaviour
+for a directly exposed port.
 
 ---
 
@@ -157,6 +205,7 @@ including its CSRF check. Admin credentials come from `ADMIN_EMAIL` /
 ## Layout
 
 ```
+main.py           entry point: reads SERVER_PORT, starts one worker
 app/
   main.py         app factory, middleware, lifespan
   config.py       every environment variable

@@ -12,6 +12,8 @@ from collections import defaultdict, deque
 
 from fastapi import HTTPException, Request, status
 
+from .config import settings
+
 
 class RateLimiter:
     def __init__(self, limit: int, window_seconds: int, max_keys: int = 10_000) -> None:
@@ -59,13 +61,15 @@ class RateLimiter:
 def client_ip(request: Request) -> str:
     """Best-effort client address.
 
-    ``X-Forwarded-For`` is only trusted because this app is expected to sit
-    behind a reverse proxy or tunnel; if it is exposed directly, strip the
-    header at the edge.
+    ``X-Forwarded-For`` is only consulted when TRUST_PROXY_HEADERS says a
+    proxy is in front. On a directly exposed server the header is attacker
+    controlled, and honouring it would let anyone mint a fresh rate-limit
+    bucket per request.
     """
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    if settings.trust_proxy_headers:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
 
 

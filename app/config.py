@@ -6,17 +6,37 @@ file). Nothing in the codebase should hardcode a host, secret or limit.
 
 from __future__ import annotations
 
+import os
+import sys
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _env_file() -> str:
+    """Where to look for a .env file.
+
+    Real environment variables always win over the file, so a host that
+    injects its own configuration needs no file at all. ENV_FILE overrides
+    the search; otherwise the project root is tried, then the working
+    directory.
+    """
+    explicit = os.environ.get("ENV_FILE")
+    if explicit:
+        return explicit
+    candidate = PROJECT_ROOT / ".env"
+    if candidate.exists():
+        return str(candidate)
+    return ".env"
 
 
 class Settings(BaseSettings):
-    # Resolved from the package so the server can be started from any directory.
     model_config = SettingsConfigDict(
-        env_file=str(Path(__file__).resolve().parent.parent / ".env"),
+        env_file=_env_file(),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
@@ -32,8 +52,22 @@ class Settings(BaseSettings):
     # the people you invite (use a tunnel or a real host, not 127.0.0.1).
     public_base_url: str = "http://127.0.0.1:8000"
 
-    host: str = "127.0.0.1"
-    port: int = 8000
+    # Containers hand the port over in an environment variable and expect the
+    # process to bind every interface. SERVER_PORT is checked first because
+    # that is what game-server style panels set; PORT covers most PaaS hosts.
+    host: str = Field(
+        default="0.0.0.0",
+        validation_alias=AliasChoices("HOST", "SERVER_HOST", "BIND_HOST"),
+    )
+    port: int = Field(
+        default=8000,
+        validation_alias=AliasChoices("SERVER_PORT", "PORT", "BIND_PORT"),
+    )
+
+    # Set only when a reverse proxy sits in front. When the server is exposed
+    # directly, trusting X-Forwarded-For would let any caller spoof their
+    # address and walk straight past the rate limiter.
+    trust_proxy_headers: bool = False
 
     # -- Security --------------------------------------------------------
     secret_key: str = Field(..., min_length=32)
@@ -124,9 +158,26 @@ class Settings(BaseSettings):
         )
 
 
+REQUIRED_HINT = """
+CodeColab could not start: its configuration is incomplete.
+
+  Looked for a .env file at: {path}
+
+Every setting can also come from real environment variables, which take
+precedence over the file. At minimum you need SECRET_KEY (32+ characters)
+and DATABASE_URL. See .env.example for the full list.
+"""
+
+
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()  # type: ignore[call-arg]
+    try:
+        return Settings()  # type: ignore[call-arg]
+    except ValidationError as exc:
+        # A pydantic traceback is a poor first impression in a container log.
+        print(REQUIRED_HINT.format(path=_env_file()), file=sys.stderr)
+        print(exc, file=sys.stderr)
+        raise SystemExit(1) from exc
 
 
 settings = get_settings()
