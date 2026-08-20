@@ -19,7 +19,7 @@ import secrets
 import shutil
 from pathlib import Path
 
-from .config import settings
+from .config import PROJECT_ROOT, settings
 
 logger = logging.getLogger("codecolab")
 
@@ -34,7 +34,16 @@ _RESERVED = {
 
 
 def root() -> Path:
-    path = Path(settings.attachment_dir).resolve()
+    """The attachment directory, anchored to the project rather than the cwd.
+
+    A relative ATTACHMENT_DIR resolved against the working directory would
+    point somewhere different depending on where the server was launched
+    from, silently orphaning everything already stored.
+    """
+    configured = Path(settings.attachment_dir)
+    path = (
+        configured if configured.is_absolute() else PROJECT_ROOT / configured
+    ).resolve()
     path.mkdir(parents=True, exist_ok=True)
     return path
 

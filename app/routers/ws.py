@@ -612,13 +612,8 @@ async def _board(
     Deliberately not gated on the editor role: someone in view-only mode
     still needs to be able to circle the line they are asking about.
     """
-    if hub.room_status(session.public_id, STATUS_ACTIVE) == STATUS_PAUSED:
-        await hub.send(
-            conn,
-            {"type": "error", "code": "paused", "message": "The session is paused"},
-        )
-        return
-
+    # Deliberately allowed while paused. Pausing freezes the code so people
+    # can talk about it, and drawing on it is talking.
     participant = await db.get(Participant, conn.participant_id)
     if participant is None:
         return
