@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -47,15 +48,38 @@ SessionLocal = async_sessionmaker(
 )
 
 
+# Columns added after a table shipped. `create_all` only creates what is
+# missing wholesale, so an existing deployment would keep the old table and
+# every query naming the new column would fail. Until there is a real
+# migration story, additive columns go here: each is checked before it is
+# added, so a boot on an up-to-date database does nothing.
+ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("attachments", "path", "VARCHAR(400) NOT NULL DEFAULT ''"),
+)
+
+
+def _add_missing_columns(conn) -> None:
+    inspector = inspect(conn)
+    tables = set(inspector.get_table_names())
+    for table, column, ddl in ADDED_COLUMNS:
+        if table not in tables:
+            continue  # create_all just made it, with the column already on it
+        if column in {c["name"] for c in inspector.get_columns(table)}:
+            continue
+        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+
+
 async def init_models() -> None:
-    """Create any missing tables.
+    """Create any missing tables, and any column added to an existing one.
 
     Deliberately simple: this project has no migration story yet, so the
     schema is created on boot. Swap in Alembic before you start changing
-    columns on a database that already holds real data.
+    columns - as opposed to adding them - on a database that already holds
+    real data.
     """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_add_missing_columns)
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:

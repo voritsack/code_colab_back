@@ -345,6 +345,10 @@ async def attachment_list(
         {
             "id": row.id,
             "name": row.name,
+            "path": row.path or "",
+            # Clients compare this with what they already have on disk, so an
+            # arriving list does not make everyone rewrite files they match.
+            "sha256": row.sha256 or "",
             "size": row.size,
             "content_type": row.content_type,
             "uploaded_by": row.uploaded_by,

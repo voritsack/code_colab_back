@@ -235,6 +235,11 @@ class Attachment(Base):
 
     # What the uploader called it, sanitised for display and for saving.
     name: Mapped[str] = mapped_column(String(255))
+    # Where it belongs in the shared folder, when it came from one. Empty for
+    # a loose attachment - a screenshot, a PDF - which is nobody's project
+    # file. A value here means every client drops it at that path instead of
+    # leaving it in a list waiting to be saved by hand.
+    path: Mapped[str] = mapped_column(String(400), default="")
     # What it is called on disk: opaque, so a crafted name cannot escape.
     stored_name: Mapped[str] = mapped_column(String(80), unique=True)
     content_type: Mapped[str] = mapped_column(String(120), default="application/octet-stream")

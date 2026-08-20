@@ -170,6 +170,10 @@ class SnapshotOut(BaseModel):
 class AttachmentOut(BaseModel):
     id: int
     name: str
+    # Where it goes in the shared folder. Empty means it is a loose file that
+    # only belongs in the attachment list.
+    path: str = ""
+    sha256: str = ""
     size: int
     content_type: str
     uploaded_by: str

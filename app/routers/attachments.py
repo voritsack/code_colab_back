@@ -1,9 +1,16 @@
 """Passing files round a session.
 
-Separate from the workspace sync on purpose. The sync is for code: text,
-edited live, merged into everyone's folder. This is for the other thing -
-an image, a zip, a PDF - which nobody wants appearing in their project tree
-but everybody needs a copy of.
+Two things share this transport, told apart by whether the upload names a
+``path`` in the shared folder.
+
+Without one it is a loose attachment - an image, a zip, a PDF - which nobody
+wants appearing in their project tree but everybody needs a copy of.
+
+With one it is a project file that could not go through the live sync: the
+sync carries UTF-8 text under a size cap, so a PNG or a 4 MB fixture has to
+come this way instead. It still belongs at a particular place in everyone's
+folder, and naming that place is what lets the clients put it there rather
+than leaving it in a list to be saved by hand.
 
 Everything here dies with the session.
 """
@@ -13,7 +20,7 @@ from __future__ import annotations
 import io
 import zipfile
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +41,7 @@ from ..models import (
 from ..schemas import AttachmentOut, MessageOut
 from ..security import session_context
 from ..services import log_event, touch
+from ..utils import UnsafePathError, sanitize_relative_path
 
 router = APIRouter(prefix="/api/sessions/{public_id}/attachments", tags=["attachments"])
 
@@ -44,6 +52,8 @@ def _serialise(row: Attachment) -> AttachmentOut:
     return AttachmentOut(
         id=row.id,
         name=row.name,
+        path=row.path or "",
+        sha256=row.sha256 or "",
         size=row.size,
         content_type=row.content_type,
         uploaded_by=row.uploaded_by,
@@ -88,10 +98,24 @@ async def list_attachments(
 async def upload(
     public_id: str,
     file: UploadFile = File(...),
+    path: str = Form(""),
     context: tuple[Participant, CollabSession] = Depends(session_context),
     db: AsyncSession = Depends(get_db),
 ) -> AttachmentOut:
     participant, session = await _context(public_id, context)
+
+    # A path is a client's instruction to write into everyone's folder, so it
+    # gets the same treatment as a path on the sync channel: anything that
+    # could climb out of the workspace is refused here, not left to be caught
+    # by whichever client is least careful.
+    if path:
+        try:
+            path = sanitize_relative_path(path)
+        except UnsafePathError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
+
     if session.status == STATUS_ENDED:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Session has ended"
@@ -169,6 +193,7 @@ async def upload(
         participant_id=participant.id,
         uploaded_by=participant.display_name,
         name=storage.display_name(file.filename or "file"),
+        path=path,
         stored_name=stored_name,
         content_type=(file.content_type or "application/octet-stream")[:120],
         size=size,
@@ -179,7 +204,7 @@ async def upload(
     await log_event(
         db,
         kind="attachment.added",
-        message=f"{row.name} ({size} bytes)",
+        message=f"{row.path or row.name} ({size} bytes)",
         actor=participant.display_name,
         session=session,
         participant=participant,
