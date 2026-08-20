@@ -32,6 +32,9 @@ def banner() -> None:
     logger.info("  public url    %s", settings.public_base_url)
     logger.info("  admin         %s/admin", settings.public_base_url)
     logger.info("  database      %s", _safe_database_url())
+    # Printed because a mismatch between this and the published extension is
+    # invisible at runtime: invite links simply stop opening anything.
+    logger.info("  extension id  %s", settings.vscode_extension_id)
     logger.info("  proxy headers %s", "trusted" if settings.trust_proxy_headers else "ignored")
 
     if not settings.public_base_url.startswith("https://"):
@@ -44,6 +47,13 @@ def banner() -> None:
         logger.warning("DEBUG is on: /api/docs is public. Turn it off in production.")
     if not settings.admin_email or not settings.admin_password:
         logger.warning("No ADMIN_EMAIL/ADMIN_PASSWORD: the dashboard will have no account.")
+    if settings.vscode_extension_id.startswith("local."):
+        logger.warning(
+            "VSCODE_EXTENSION_ID is still %s. If the extension has been "
+            "published under a real publisher, every 'Open in VS Code' link "
+            "this server hands out will silently do nothing.",
+            settings.vscode_extension_id,
+        )
 
 
 def _safe_database_url() -> str:
