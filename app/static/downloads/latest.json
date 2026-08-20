@@ -1,7 +1,7 @@
 {
-  "version": "2.6.5",
-  "file": "codecolab-2.6.5.vsix",
-  "sha256": "ac439da6be4adac2bd0a6d59b5af6321028756c3d51266e45e1553e35c99a316",
-  "notes": "remove the pre-rename extension after update",
-  "published_at": "2026-08-20T23:42:00+00:00"
+  "version": "2.6.6",
+  "file": "codecolab-2.6.6.vsix",
+  "sha256": "7c0007ff17fa8373b6ead6c714cd251d583e6f61d149cdb379db70f562ccb569",
+  "notes": "stop packaging .env.example",
+  "published_at": "2026-08-20T23:49:38+00:00"
 }
