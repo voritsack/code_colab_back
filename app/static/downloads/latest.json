@@ -1,7 +1,7 @@
 {
-  "version": "2.6.2",
-  "file": "codecolab-2.6.2.vsix",
-  "sha256": "464f721f9e01b5ac04425676c36f5142f4c64e383afba4dd19d624fcfa052c24",
-  "notes": "republished by a9b5f6",
-  "published_at": "2026-08-20T22:42:23+00:00"
+  "version": "2.6.3",
+  "file": "codecolab-2.6.3.vsix",
+  "sha256": "30168bbb6eeaae01dfdbc8ac1aa5493c9926417b812aea96704e92309e85a6f3",
+  "notes": "what changed",
+  "published_at": "2026-08-20T22:48:02+00:00"
 }
