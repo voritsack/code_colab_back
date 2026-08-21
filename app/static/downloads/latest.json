@@ -1,7 +1,7 @@
 {
-  "version": "1.0.0",
-  "file": "codecolab-1.0.0.vsix",
-  "sha256": "e85d08d26b78c27922d64594107a465fc0387f27b33bdad26db1acd3f355809b",
+  "version": "0.1.0",
+  "file": "codecolab-0.1.0.vsix",
+  "sha256": "9545eda0483a5c1a70d2384789258e7100c2e256659b48c5e404d2e3cd42c5cf",
   "notes": "first Marketplace release",
-  "published_at": "2026-08-21T00:34:31+00:00"
+  "published_at": "2026-08-21T00:39:02+00:00"
 }
