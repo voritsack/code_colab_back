@@ -176,6 +176,20 @@ class Settings(BaseSettings):
     def _strip_slash(cls, value: str) -> str:
         return value.rstrip("/")
 
+    @field_validator("vscode_extension_id")
+    @classmethod
+    def _lowercase_extension_id(cls, value: str) -> str:
+        """An extension id is case-insensitive; the deep link is not quite.
+
+        `<publisher>.<name>` sits in the authority of `vscode://<id>/join`,
+        and hosting panels have a habit of shouting environment values back.
+        VS Code lowercases the authority when it parses the URI, so an
+        upper-case id still resolves - but the link we print, log and hand to
+        people reads wrong, and anything comparing it as a string disagrees
+        with the manifest. Normalise once, here.
+        """
+        return value.strip().lower()
+
     @staticmethod
     def _split_csv(value: str) -> list[str]:
         return [item.strip() for item in value.split(",") if item.strip()]
